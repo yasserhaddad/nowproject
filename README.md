@@ -1,1 +1,1 @@
-# NowGAN
+# NowProject
