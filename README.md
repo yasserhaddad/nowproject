@@ -1,1 +1,1 @@
-# nowgan
+# NowGAN
