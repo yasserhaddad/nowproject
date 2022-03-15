@@ -9,8 +9,6 @@ import os
 import sys
 
 sys.path.append("../")
-
-
 import time
 import dask
 import argparse
@@ -28,7 +26,7 @@ from xforecasting.utils.io import get_ar_model_tensor_info
 from xforecasting.utils.torch import summarize_model
 from xforecasting import (
     AR_Scheduler,
-    AutoregressiveTraining,
+    # AutoregressiveTraining,
     AutoregressivePredictions,
     rechunk_forecasts_for_verification,
     EarlyStopping,
@@ -54,6 +52,7 @@ from nowproject.utils.config import (
 
 from nowproject.early_stopping import EarlyStopping
 from nowproject.loss import WeightedMSELoss
+from nowproject.training import AutoregressiveTraining
 
 # Project specific functions
 import nowproject.architectures as dl_architectures
