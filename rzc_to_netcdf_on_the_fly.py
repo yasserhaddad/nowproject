@@ -57,6 +57,7 @@ def read_rzc_file(input_path: pathlib.Path,
     x = np.arange(BOTTOM_LEFT_COORDINATES[1], BOTTOM_LEFT_COORDINATES[1] + rzc.shape[1])
     y = np.arange(BOTTOM_LEFT_COORDINATES[0] + rzc.shape[0] - 1, BOTTOM_LEFT_COORDINATES[0] - 1, -1)
     time = rzc_filename_to_time(input_path.as_posix().split("/")[-1])
+    radar_availability = input_path.as_posix().split("/")[-1][12:14]
 
     ds = xr.Dataset(
                 data_vars=dict(
@@ -65,6 +66,7 @@ def read_rzc_file(input_path: pathlib.Path,
                 ),
                 coords=dict(
                     time=time,
+                    radar_availability=radar_availability,
                     x=(["x"], x),
                     y=(["y"], y)
                 ),

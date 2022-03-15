@@ -112,6 +112,7 @@ def read_rzc_file(input_path: pathlib.Path,
     x = np.arange(BOTTOM_LEFT_COORDINATES[1], BOTTOM_LEFT_COORDINATES[1] + rzc.shape[1])
     y = np.arange(BOTTOM_LEFT_COORDINATES[0] + rzc.shape[0] - 1, BOTTOM_LEFT_COORDINATES[0] - 1, -1)
     time = rzc_filename_to_time(input_path.as_posix().split("/")[-1])
+    radar_availability = input_path.as_posix().split("/")[-1][12:14]
 
     ds = xr.Dataset(
                 data_vars=dict(
@@ -120,6 +121,7 @@ def read_rzc_file(input_path: pathlib.Path,
                 ),
                 coords=dict(
                     time=time,
+                    radar_availability=radar_availability,
                     x=(["x"], x),
                     y=(["y"], y)
                 ),
@@ -183,7 +185,8 @@ def fill_missing_time(ds: xr.Dataset, range_freq: str = "2min30s"):
 
 
 def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, encoding: dict = ZARR_ENCODING):
-    ds = xr.open_mfdataset(f"{data_dir_path.as_posix()}/*/*.nc")
+    fpaths = [p.as_posix() for p in list(data_dir_path.glob("RZC*.nc"))]
+    ds = xr.open_mfdataset(sorted(fpaths))
     ds = fill_missing_time(ds)
 
     ds = ds.chunk({"time": 25, "y": -1, "x": -1})
@@ -197,10 +200,12 @@ def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Pat
 if __name__ == "__main__":
     zip_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zipped")
     unzipped_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/unzipped")
-    netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
+    # netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
     zarr_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zarr/")
     log_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/logs/")
 
     # unzip_rzc(zip_dir_path, unzipped_dir_path)
     # workers = cpu_count() - 4
     # rzc_to_netcdf(unzipped_dir_path, netcdf_dir_path, log_dir_path, num_workers=workers)
+    netcdf_dir_path = pathlib.Path("/ltenas3/monika/data_lte")
+    netcdf_rzc_to_zarr(netcdf_dir_path, zarr_dir_path)
