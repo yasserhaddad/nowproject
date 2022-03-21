@@ -10,6 +10,8 @@ from zipfile import ZipFile
 from itertools import repeat
 from multiprocessing import Pool
 
+from warnings import warn
+
 BOTTOM_LEFT_COORDINATES = [255, -160]
 
 mask_ntcdf_encoding = {
@@ -40,6 +42,25 @@ NETCDF_ENCODINGS = {
     "precip": precip_ntcdf_encoding
 }
 
+
+def get_metranet_header_dictionary(radar_file):
+    prd_header = {'row': 0, 'column': 0}
+    try:
+       with open(radar_file, 'rb') as data_file:
+           for t_line in data_file:
+               line = t_line.decode("utf-8").strip('\n')
+               if line.find('end_header') == -1:
+                   data = line.split('=')
+                   prd_header[data[0]] = data[1]
+               else:
+                   break
+       return prd_header   
+    except OSError as ee:
+        warn(str(ee))
+        print("Unable to read file '%s'" % radar_file)
+        return None
+
+
 def rzc_filename_to_time(filename: str):
     time = datetime.datetime.strptime(filename[3:12], "%y%j%H%M")
     if filename[3:12].endswith("2") or filename[3:12].endswith("7"):
@@ -53,6 +74,7 @@ def read_rzc_file(input_path: pathlib.Path,
                   col_start: int = 0, col_end: int = 710) -> xr.Dataset:
     metranet = pyart.aux_io.read_cartesian_metranet(input_path.as_posix())
     rzc = metranet.fields['radar_estimated_rain_rate']['data'][0,:,:]
+    metranet_header = get_metranet_header_dictionary(input_path.as_posix())
 
     x = np.arange(BOTTOM_LEFT_COORDINATES[1], BOTTOM_LEFT_COORDINATES[1] + rzc.shape[1])
     y = np.arange(BOTTOM_LEFT_COORDINATES[0] + rzc.shape[0] - 1, BOTTOM_LEFT_COORDINATES[0] - 1, -1)
@@ -66,9 +88,11 @@ def read_rzc_file(input_path: pathlib.Path,
                 ),
                 coords=dict(
                     time=time,
-                    radar_availability=radar_availability,
                     x=(["x"], x),
-                    y=(["y"], y)
+                    y=(["y"], y),
+                    radar_availability=radar_availability,
+                    radar_names=metranet_header["radar"],
+                    radar_quality=metranet_header["quality"]
                 ),
                 attrs={},
             )
@@ -98,7 +122,7 @@ def daily_rzc_data_to_netcdf(input_dir_path: pathlib.Path, output_dir_path: path
                     f.write(f"{file.as_posix()}\n")
 
         if len(list_ds) > 0:
-            xr.concat(list_ds, dim="time")\
+            xr.concat(list_ds, dim="time", coords=["radar_availability", "radar_names", "radar_quality"])\
               .to_netcdf(output_dir_path / output_filename, encoding=encoding)
 
 
@@ -145,6 +169,6 @@ if __name__ == "__main__":
     netcdf_dir_path.mkdir(exist_ok=True)
     log_dir_path.mkdir(exist_ok=True)
 
-    workers = 4
+    workers = 15
     unzip_and_combine_rzc(zip_dir_path, unzipped_dir_path, netcdf_dir_path, 
                           log_dir_path, num_workers=workers)

@@ -1,3 +1,5 @@
+import re
+import shutil
 import pathlib
 import datetime
 from zipfile import ZipFile
@@ -15,6 +17,7 @@ import numcodecs
 from xforecasting.utils.zarr import write_zarr, rechunk_Dataset
 
 import warnings
+from warnings import warn
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)  
 
@@ -53,7 +56,7 @@ NETCDF_ENCODINGS = {
 precip_zarr_encoding = {
     "chunks": (25, -1, -1), 
     "compressor": zarr.Blosc(cname="zstd", clevel=3, shuffle=2),
-    "dtype": "int16", 
+    "dtype": "uint16", 
     '_FillValue': 65535,
     "scale_factor": 0.01,
  }
@@ -103,11 +106,33 @@ def rzc_filename_to_time(filename: str):
     return time
 
 
+def get_metranet_header_dictionary(radar_file: str):
+    prd_header = {'row': 0, 'column': 0}
+    try:
+       with open(radar_file, 'rb') as data_file:
+           for t_line in data_file:
+               line = t_line.decode("utf-8").strip('\n')
+               if line.find('end_header') == -1:
+                   data = line.split('=')
+                   prd_header[data[0]] = data[1]
+               else:
+                   break
+       return prd_header   
+    except OSError as ee:
+        warn(str(ee))
+        print("Unable to read file '%s'" % radar_file)
+        return None
+
+
 def read_rzc_file(input_path: pathlib.Path,  
                   row_start: int = 0, row_end: int = 640, 
                   col_start: int = 0, col_end: int = 710) -> xr.Dataset:
     metranet = pyart.aux_io.read_cartesian_metranet(input_path.as_posix(), reader="python")
     rzc = metranet.fields['radar_estimated_rain_rate']['data'][0,:,:]
+
+    metranet_header = get_metranet_header_dictionary(input_path.as_posix())
+    if metranet_header is None:
+        metranet_header = {}
 
     x = np.arange(BOTTOM_LEFT_COORDINATES[1], BOTTOM_LEFT_COORDINATES[1] + rzc.shape[1])
     y = np.arange(BOTTOM_LEFT_COORDINATES[0] + rzc.shape[0] - 1, BOTTOM_LEFT_COORDINATES[0] - 1, -1)
@@ -121,9 +146,11 @@ def read_rzc_file(input_path: pathlib.Path,
                 ),
                 coords=dict(
                     time=time,
-                    radar_availability=radar_availability,
                     x=(["x"], x),
-                    y=(["y"], y)
+                    y=(["y"], y),
+                    radar_availability=radar_availability,
+                    radar_names=metranet_header.get("radar", ""),
+                    radar_quality=metranet_header.get("quality", "")
                 ),
                 attrs={},
             )
@@ -142,7 +169,7 @@ def daily_rzc_data_to_netcdf(input_dir_path: pathlib.Path, output_dir_path: path
     list_ds = []
 
     if not (output_dir_path / output_filename).exists():
-        for file in input_dir_path.glob("*.801"):
+        for file in sorted(input_dir_path.glob("*.801")):
             try:
                 list_ds.append(read_rzc_file(file, row_start, row_end, col_start, col_end))
             except TypeError:
@@ -153,7 +180,7 @@ def daily_rzc_data_to_netcdf(input_dir_path: pathlib.Path, output_dir_path: path
                     f.write(f"{file.as_posix()}\n")
 
         if len(list_ds) > 0:
-            xr.concat(list_ds, dim="time")\
+            xr.concat(list_ds, dim="time", coords="all")\
               .to_netcdf(output_dir_path / output_filename, encoding=encoding)
 
 
@@ -183,29 +210,67 @@ def fill_missing_time(ds: xr.Dataset, range_freq: str = "2min30s"):
     return ds.reindex({"time": full_range}, fill_value={"precip": 65535, "mask": 0})
     
 
+def drop_duplicates_timesteps(ds: xr.Dataset):
+    idx_keep = np.arange(len(ds.time))
+    to_remove = []
+    _, idx, count = np.unique(ds.time, return_counts=True, return_index=True)
+    index_duplicates = [list(range(idx[i], idx[i]+count[i])) for i, _ in enumerate(idx) if count[i] > 1]
 
-def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, encoding: dict = ZARR_ENCODING):
-    fpaths = [p.as_posix() for p in list(data_dir_path.glob("RZC*.nc"))]
-    ds = xr.open_mfdataset(sorted(fpaths))
-    ds = fill_missing_time(ds)
+    for dup in index_duplicates:
+        radar_names = [len(re.sub(r'[^a-zA-Z]', '', str(ds.radar_names[i].values))) for i in dup]
+        to_remove.extend([dup[i] for i in range(len(radar_names)) if i != radar_names.index(max(radar_names))])
+
+    idx_keep = [i for i in idx_keep if i not in to_remove]
+
+    return ds.isel(time=idx_keep)
+
+
+def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, 
+                       encoding: dict = ZARR_ENCODING):
+    fpaths = [p.as_posix() for p in sorted(list(data_dir_path.glob("RZC*.nc")))]
+    ds = [drop_duplicates_timesteps(xr.open_dataset(p).sortby("time")) for p in fpaths]
+    ds = fill_missing_time(xr.concat(ds, dim="time"))
+    ds['radar_quality'] = ds['radar_quality'].astype(str)
+    ds['radar_availability'] = ds['radar_availability'].astype(str)
+    ds['radar_names'] = ds['radar_names'].astype(str)
 
     ds = ds.chunk({"time": 25, "y": -1, "x": -1})
-    ds.to_zarr((zarr_dir_path / "rzc_temporal_chunk.zarr").as_posix(), encoding=encoding)
 
-    ds = ds.chunk({"time": -1, "y": 1, "x": 1})
-    ds.to_zarr((zarr_dir_path / "rzc_spatial_chunk.zarr").as_posix(), encoding=encoding)
+    temporal_chunk_filepath = zarr_dir_path / "rzc_temporal_chunk.zarr"
+
+    if temporal_chunk_filepath.exists():
+        shutil.rmtree(temporal_chunk_filepath)
+    ds.to_zarr(temporal_chunk_filepath, encoding=encoding, consolidated=True)
+
+    ds = xr.open_zarr(temporal_chunk_filepath)
+
+    spatial_chunk_filepath = zarr_dir_path / "rzc_spatial_chunk.zarr"
+    spatial_chunk_temp_filepath = zarr_dir_path / "rzc_spatial_chunk_temp.zarr"
+
+    if spatial_chunk_filepath.exists():
+        shutil.rmtree(spatial_chunk_filepath)
+    if spatial_chunk_temp_filepath.exists():
+        shutil.rmtree(spatial_chunk_temp_filepath)
+
+    rechunk_Dataset(ds, {"time": -1, "y": 1, "x": 1},
+                    spatial_chunk_filepath.as_posix(), 
+                    spatial_chunk_temp_filepath.as_posix(), 
+                    max_mem="1GB", force=False)
 
     
 
 if __name__ == "__main__":
     zip_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zipped")
     unzipped_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/unzipped")
-    # netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
+    netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
     zarr_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zarr/")
     log_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/logs/")
 
     # unzip_rzc(zip_dir_path, unzipped_dir_path)
     # workers = cpu_count() - 4
     # rzc_to_netcdf(unzipped_dir_path, netcdf_dir_path, log_dir_path, num_workers=workers)
-    netcdf_dir_path = pathlib.Path("/ltenas3/monika/data_lte")
+    
+    # netcdf_dir_path = pathlib.Path("/ltenas3/monika/data_lte")
+    netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf_test/")
+    zarr_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zarr_test/")
     netcdf_rzc_to_zarr(netcdf_dir_path, zarr_dir_path)
