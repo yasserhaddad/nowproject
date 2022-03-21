@@ -14,7 +14,7 @@ from nowproject.utils_models import check_pool_method
 from nowproject.utils_models import check_skip_connection
 
 ##----------------------------------------------------------------------------.
-class ConvBlock(GeneralConvBlock):
+class ConvBlock(torch.nn.Module):
     """Spherical graph convolution block.
 
     Parameters
@@ -23,13 +23,8 @@ class ConvBlock(GeneralConvBlock):
         Number of channels in the input graph.
     out_channels : int
         Number of channels in the output graph.
-    laplacian : TYPE
-        DESCRIPTION
     kernel_size : int
         Chebychev polynomial degree
-    conv_type : str, optional
-        'graph' or 'image'. The default is 'graph'.
-        'image' can be used only when sampling='equiangular'
     bias : bool, optional
         Whether to add bias parameters. The default is True.
         If batch_norm = True, bias is set to False.
@@ -43,24 +38,13 @@ class ConvBlock(GeneralConvBlock):
     activation_fun : str, optional
         Name of an activation function implemented in torch.nn.functional
         The default is 'relu'.
-    periodic_padding : bool, optional
-        Matters only if sampling='equiangular' and conv_type='image'.
-        whether to use periodic padding along the longitude dimension. The default is True.
-    lonlat_ratio : int
-        Matters only if sampling='equiangular' and conv_type='image.
-        Aspect ratio to reshape the input 1D data to a 2D image.
-        lonlat_ratio = H // W = n_longitude rings / n_latitude rings
-        A ratio of 2 means the equiangular grid has the same resolution.
-        in latitude and longitude.
     """
 
     def __init__(
         self,
         in_channels,
         out_channels,
-        laplacian,
         kernel_size=3,
-        conv_type="graph",
         bias=True,
         batch_norm=False,
         batch_norm_before_activation=False,
@@ -68,7 +52,6 @@ class ConvBlock(GeneralConvBlock):
         activation_fun="relu",
         padding=0, 
         dilation=True,
-        lonlat_ratio=2,
     ):
 
         super().__init__()
@@ -99,7 +82,7 @@ class ConvBlock(GeneralConvBlock):
     def forward(self, x):
         """Define forward pass of a ConvBlock.
 
-        It expect a tensor with shape: (sample, x,y, time-feature).
+        It expects a tensor with shape: (sample, x, y, time-feature).
         """
         # TODO adapt !!!! 
         x = self.conv(x)
@@ -152,7 +135,6 @@ class ResBlock(torch.nn.Module):
         self,
         in_channels,
         out_channels,
-        laplacian,
         convblock_kwargs,
         rezero=True,
         act_on_last_conv=False,

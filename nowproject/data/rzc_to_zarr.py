@@ -12,68 +12,13 @@ import xarray as xr
 from itertools import repeat
 from multiprocessing import Pool, cpu_count
 
-import zarr
-import numcodecs
-from xforecasting.utils.zarr import write_zarr, rechunk_Dataset
+from xforecasting.utils.zarr import rechunk_Dataset
+from data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
 
 import warnings
 from warnings import warn
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)  
-
-
-BOTTOM_LEFT_COORDINATES = [255, -160]
-
-mask_ntcdf_encoding = {
-    'zlib': True,
-    'shuffle': True,
-    'complevel': 1,
-    'fletcher32': False,
-    'contiguous': False,
-    'chunksizes': (24, 128, 142),
-    'dtype': 'uint8'
-}
-
-precip_ntcdf_encoding = {
-    'zlib': True,
-    'shuffle': True,
-    'complevel': 1,
-    'fletcher32': False,
-    'contiguous': False,
-    'chunksizes': (24, 128, 142),
-    'dtype': "uint16",
-    '_FillValue': 65535,
-    "scale_factor": 0.01,
-    "add_offset": 0.0
- }
-
-NETCDF_ENCODINGS = {
-    "mask": mask_ntcdf_encoding,
-    "precip": precip_ntcdf_encoding
-}
-
-
-precip_zarr_encoding = {
-    "chunks": (25, -1, -1), 
-    "compressor": zarr.Blosc(cname="zstd", clevel=3, shuffle=2),
-    "dtype": "uint16", 
-    '_FillValue': 65535,
-    "scale_factor": 0.01,
- }
-
- 
-mask_zarr_encoding = {
-    "chunks": (25, -1, -1), 
-    "compressor": zarr.Blosc(cname="zstd", clevel=3, shuffle=2),
-    "dtype": "uint8",
-    "_FillValue": 0,
-}
-
-
-ZARR_ENCODING = {
-    'precip': precip_zarr_encoding,
-    "mask": mask_zarr_encoding
-}
 
 
 def unzip_files(input_path: pathlib.Path, output_path: pathlib.Path):
@@ -94,8 +39,7 @@ def unzip_rzc(input_dir_path: pathlib.Path, output_dir_path: pathlib.Path):
             output_year_path = output_dir_path / str(year)
             output_year_path.mkdir(exist_ok=True)
             unzip_files(folder, output_year_path)
-            print("done.")
-        
+            print("done.")    
 
 
 def rzc_filename_to_time(filename: str):
@@ -229,11 +173,12 @@ def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Pat
                        encoding: dict = ZARR_ENCODING):
     fpaths = [p.as_posix() for p in sorted(list(data_dir_path.glob("RZC*.nc")))]
     ds = [drop_duplicates_timesteps(xr.open_dataset(p).sortby("time")) for p in fpaths]
+
     ds = fill_missing_time(xr.concat(ds, dim="time"))
+    ds.attrs = METADATA
     ds['radar_quality'] = ds['radar_quality'].astype(str)
     ds['radar_availability'] = ds['radar_availability'].astype(str)
     ds['radar_names'] = ds['radar_names'].astype(str)
-
     ds = ds.chunk({"time": 25, "y": -1, "x": -1})
 
     temporal_chunk_filepath = zarr_dir_path / "rzc_temporal_chunk.zarr"

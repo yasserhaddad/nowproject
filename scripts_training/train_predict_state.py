@@ -58,7 +58,7 @@ from nowproject.training import AutoregressiveTraining
 import nowproject.architectures as dl_architectures
 
 # TODO: Plotting functions
-from nowproject.my_plotting import (
+from nowproject.utils.my_plotting import (
     plot_skill_maps,
     plot_global_skill,
     plot_global_skills,
