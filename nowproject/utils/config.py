@@ -14,6 +14,9 @@ import shutil
 import inspect
 import types
 import numpy as np
+import datetime
+import pytz as tz
+import pandas as pd
 import deepdiff
 
 from xforecasting.utils.torch import (
@@ -598,3 +601,22 @@ def print_model_description(cfg, dim_info=None):
     if dim_info is not None:
         cfg["dim_info"] = dim_info
     pretty_printing(cfg, indent=1, indent_factor=2)
+
+##------------------------------------------------------------------------.
+####################
+### Test events ####
+####################
+
+def create_event_time_range(event_dict, target_timezone="Europe/Zurich"):
+    start_time = tz.timezone(event_dict["timezone"]).localize(event_dict["start_time"])\
+                   .astimezone(tz.timezone(target_timezone))
+    return pd.date_range(start=pd.to_datetime(start_time), 
+                         end=pd.to_datetime(start_time) + datetime.timedelta(hours=event_dict["duration"]), 
+                         freq="2min30s").to_numpy()
+
+def create_test_events_time_range(fpath):
+    with open(fpath, "r", "utf-8") as f:
+        event_dicts = json.load(f)
+        return np.concatenate([create_event_time_range(d) for d in event_dicts])
+
+

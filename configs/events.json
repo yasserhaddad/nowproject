@@ -1,0 +1,92 @@
+[
+    {
+        "start_time": "2016-04-16 17:00:00",
+        "timezone": "UTC",
+        "duration": 8,
+        "nature": "Mixed (Orographic effects)"
+    },
+    {
+        "start_time": "2016-07-11 20:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Mixed"
+    },
+    {
+        "start_time": "2017-01-12 16:00:00",
+        "timezone": "UTC",
+        "duration": 13,
+        "nature": "Stratiform"
+    },
+    {
+        "start_time": "2017-01-31 14:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Stratiform (Orographic effects)"
+    },
+    {
+        "start_time": "2017-02-05 06:00:00",
+        "timezone": "UTC",
+        "duration": 16,
+        "nature": "Stratiform"
+    },
+    {
+        "start_time": "2017-02-28 11:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Stratiform"
+    },
+    {
+        "start_time": "2017-06-14 14:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Convective (Rotation)"
+    },
+    {
+        "start_time": "2017-06-25 02:00:00",
+        "timezone": "UTC",
+        "duration": 7,
+        "nature": "Mixed"
+    },
+    {
+        "start_time": "2017-06-27 20:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Mixed"
+    },
+    {
+        "start_time": "2017-07-07 14:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Convective"
+    },
+    {
+        "start_time": "2017-07-19 14:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Mixed"
+    },
+    {
+        "start_time": "2017-07-21 14:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Mixed"
+    },
+    {
+        "start_time": "2017-07-29 16:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Mixed (Rotation)"
+    },
+    {
+        "start_time": "2017-08-31 14:00:00",
+        "timezone": "UTC",
+        "duration": 10,
+        "nature": "Mixed"
+    },
+    {
+        "start_time": "2018-04-29 05:00:00",
+        "timezone": "UTC",
+        "duration": 13,
+        "nature": "Mixed (Orographic effects)"
+    },
+]

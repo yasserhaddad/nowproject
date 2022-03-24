@@ -1,12 +1,5 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Aug 21 17:28:57 2021
-
-@author: ghiggi
-"""
-import os
 import sys
+import pathlib
 
 sys.path.append("../")
 
@@ -17,7 +10,7 @@ from nowproject.utils.config import (
 )
 
 # - Config folder
-config_path = "/home/ghiggi/Projects/NowProject/configs"
+config_path = pathlib.Path("/home/haddad/NowProject/configs")
 
 ##----------------------------------------------------------------------------.
 # Get default settings
@@ -79,9 +72,8 @@ for architecture_name in architecture_names:
         custom_cfg["model_settings"]["kernel_size_pooling"] = kernel_size_pooling
 
         # Create config directory
-        tmp_dir = os.path.join(config_path, architecture_name)
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
+        tmp_dir = config_path / architecture_name
+        tmp_dir.mkdir(exist_ok=True)
         # Write config file
         tmp_config_name = (
             "-".join(
@@ -89,4 +81,4 @@ for architecture_name in architecture_names:
             )
             + ".json"
         )
-        write_config_file(custom_cfg, fpath=os.path.join(tmp_dir, tmp_config_name))
+        write_config_file(custom_cfg, fpath=(tmp_dir / tmp_config_name).as_posix())

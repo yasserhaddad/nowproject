@@ -10,19 +10,19 @@ import torch
 import time
 import pickle
 import dask
-from .dataloader_autoregressive import (
+from xforecasting.dataloader_autoregressive import (
     AutoregressiveDataset,
     AutoregressiveDataLoader,
     get_aligned_ar_batch,
     remove_unused_Y,
     cylic_iterator,
 )
-from .utils.ar import (
+from xforecasting.utils.ar import (
     check_ar_settings,
     check_input_k,
     check_output_k,
 )
-from .utils.torch import (
+from xforecasting.utils.torch import (
     check_device,
     check_pin_memory,
     check_asyncronous_gpu_transfer,
@@ -31,9 +31,9 @@ from .utils.torch import (
     check_ar_training_strategy,
     get_time_function,
 )
-from .training_info import AR_TrainingInfo
-from .utils.xr import xr_is_aligned
-from .utils.swag import bn_update_with_loader
+from xforecasting.training_info import AR_TrainingInfo
+from xforecasting.utils.xr import xr_is_aligned
+from xforecasting.utils.swag import bn_update_with_loader
 
 
 def AutoregressiveTraining(

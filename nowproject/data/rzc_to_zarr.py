@@ -2,6 +2,7 @@ import re
 import shutil
 import pathlib
 import datetime
+from typing import Any
 from zipfile import ZipFile
 
 import pyart
@@ -12,7 +13,8 @@ import xarray as xr
 from itertools import repeat
 from multiprocessing import Pool, cpu_count
 
-from xforecasting.utils.zarr import rechunk_Dataset
+import zarr
+from xforecasting.utils.zarr import rechunk_Dataset, write_zarr
 from data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
 
 import warnings
@@ -169,28 +171,63 @@ def drop_duplicates_timesteps(ds: xr.Dataset):
     return ds.isel(time=idx_keep)
 
 
-def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, 
-                       encoding: dict = ZARR_ENCODING):
-    fpaths = [p.as_posix() for p in sorted(list(data_dir_path.glob("RZC*.nc")))]
-    ds = [drop_duplicates_timesteps(xr.open_dataset(p).sortby("time")) for p in fpaths]
-
-    ds = fill_missing_time(xr.concat(ds, dim="time"))
-    ds.attrs = METADATA
+def postprocess_netcdf_file(input_file_path: pathlib.Path, output_dir_year_path: pathlib.Path, 
+                            encoding: dict = NETCDF_ENCODINGS):
+    ds = fill_missing_time(drop_duplicates_timesteps(xr.open_dataset(input_file_path).sortby("time")))
     ds['radar_quality'] = ds['radar_quality'].astype(str)
     ds['radar_availability'] = ds['radar_availability'].astype(str)
     ds['radar_names'] = ds['radar_names'].astype(str)
-    ds = ds.chunk({"time": 25, "y": -1, "x": -1})
 
-    temporal_chunk_filepath = zarr_dir_path / "rzc_temporal_chunk.zarr"
+    output_filename = input_file_path.as_posix().split("/")[-1]
+    ds.to_netcdf(output_dir_year_path / output_filename, encoding=encoding)
 
-    if temporal_chunk_filepath.exists():
-        shutil.rmtree(temporal_chunk_filepath)
-    ds.to_zarr(temporal_chunk_filepath, encoding=encoding, consolidated=True)
+
+def postprocess_all_netcdf(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, num_workers: int = 6):
+    for year_dir_path in data_dir_path.glob("*"):
+        year = int(year_dir_path.as_posix().split("/")[-1])
+        print(year)
+        output_dir_year_path = output_dir_path / str(year)
+        output_dir_year_path.mkdir(exist_ok=True)
+        fpaths = list(year_dir_path.glob("*"))
+
+        with Pool(num_workers) as p:
+            p.starmap(postprocess_netcdf_file, zip(fpaths, repeat(output_dir_year_path)))
+
+
+def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, 
+                       compressor: Any = "auto", encoding: dict = ZARR_ENCODING):
+
+    temporal_chunk_filepath = output_dir_path / "rzc_temporal_chunk.zarr"
+    # if temporal_chunk_filepath.exists():
+    #     shutil.rmtree(temporal_chunk_filepath)
+
+    # fpaths = [p.as_posix() for p in sorted(list(data_dir_path.glob("*/RZC*.nc")))]
+    # list_ds = [xr.open_dataset(p, chunks={"time": 576, "x": -1, "y": -1}) for p in fpaths]
+    # ds = xr.concat(list_ds, dim="time")
+    # ds.attrs = METADATA
+
+    # write_zarr(
+    #     temporal_chunk_filepath.as_posix(),
+    #     ds,
+    #     chunks={"time": 25, "y": -1, "x": -1},
+    #     compressor=compressor,
+    #     rounding=None,
+    #     encoding=encoding,
+    #     consolidated=True,
+    #     append=False,
+    #     show_progress=True,
+    # )
+
+    # ds = ds.chunk({"time": 25, "y": -1, "x": -1})
+    # ds.to_zarr(temporal_chunk_filepath, encoding=encoding, consolidated=True)
 
     ds = xr.open_zarr(temporal_chunk_filepath)
-
-    spatial_chunk_filepath = zarr_dir_path / "rzc_spatial_chunk.zarr"
-    spatial_chunk_temp_filepath = zarr_dir_path / "rzc_spatial_chunk_temp.zarr"
+    ds['radar_quality'] = ds['radar_quality'].astype(str)
+    ds['radar_availability'] = ds['radar_availability'].astype(str)
+    ds['radar_names'] = ds['radar_names'].astype(str)
+    
+    spatial_chunk_filepath = output_dir_path / "rzc_spatial_chunk.zarr"
+    spatial_chunk_temp_filepath = output_dir_path / "rzc_spatial_chunk_temp.zarr"
 
     if spatial_chunk_filepath.exists():
         shutil.rmtree(spatial_chunk_filepath)
@@ -201,21 +238,18 @@ def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Pat
                     spatial_chunk_filepath.as_posix(), 
                     spatial_chunk_temp_filepath.as_posix(), 
                     max_mem="1GB", force=False)
-
     
 
 if __name__ == "__main__":
     zip_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zipped")
     unzipped_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/unzipped")
-    netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
+    netcdf_dir_path = pathlib.Path("/ltenas3/monika/data_lte/rzc/")
+    postprocessed_netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
     zarr_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zarr/")
     log_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/logs/")
 
+    workers = cpu_count() - 4
     # unzip_rzc(zip_dir_path, unzipped_dir_path)
-    # workers = cpu_count() - 4
-    # rzc_to_netcdf(unzipped_dir_path, netcdf_dir_path, log_dir_path, num_workers=workers)
-    
-    # netcdf_dir_path = pathlib.Path("/ltenas3/monika/data_lte")
-    netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf_test/")
-    zarr_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zarr_test/")
-    netcdf_rzc_to_zarr(netcdf_dir_path, zarr_dir_path)
+    # rzc_to_netcdf(unzipped_dir_path, netcdf_dir_path, log_dir_path, num_workers=workers) 
+    # postprocess_all_netcdf(netcdf_dir_path, postprocessed_netcdf_dir_path, num_workers=workers)
+    netcdf_rzc_to_zarr(postprocessed_netcdf_dir_path, zarr_dir_path, compressor=zarr.Blosc(cname="zstd", clevel=3, shuffle=2))

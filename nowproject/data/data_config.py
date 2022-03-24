@@ -19,7 +19,6 @@ METADATA = {
     "product": "RZC",
     "accutime": 2.5,
     "unit": 'mm/h',
-    "transform": None,
     "zr_a": 316.0,
     "zr_b": 1.5
 }
@@ -55,9 +54,7 @@ NETCDF_ENCODINGS = {
 }
 
 
-precip_zarr_encoding = {
-    "chunks": (25, -1, -1), 
-    "compressor": zarr.Blosc(cname="zstd", clevel=3, shuffle=2),
+precip_zarr_encoding = { 
     "dtype": "uint16", 
     '_FillValue': 65535,
     "scale_factor": 0.01,
@@ -65,8 +62,6 @@ precip_zarr_encoding = {
 
  
 mask_zarr_encoding = {
-    "chunks": (25, -1, -1), 
-    "compressor": zarr.Blosc(cname="zstd", clevel=3, shuffle=2),
     "dtype": "uint8",
     "_FillValue": 0,
 }
