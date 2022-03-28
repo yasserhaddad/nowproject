@@ -1,5 +1,8 @@
-import pathlib
+import os
 import sys
+import argparse
+from pathlib import Path
+
 import time
 import dask
 import xarray as xr
@@ -35,7 +38,7 @@ from nowproject.utils.config import (
 
 # Project specific functions
 import nowproject.architectures as dl_architectures
-from nowproject.loss import WeightedMSELoss
+from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
 
 def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
@@ -54,7 +57,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
-    data_dynamic = data_dynamic["precip"]
+    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]].fillna(0)
     data_static = None
     data_bc = None
 
@@ -146,7 +149,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         cfg["model_settings"]["model_name_suffix"] = None
 
     exp_dir = create_experiment_directories(
-        exp_dir=exp_dir, model_name=model_name, force=force
+        exp_dir=exp_dir_path, model_name=model_name, force=force
     )  # force=True will delete existing directory
 
     # Define model weights filepath
@@ -227,6 +230,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         model_fpath=model_fpath,
         # Loss settings
         criterion=criterion,
+        reshape_tensors_4_loss=reshape_tensors_4_loss,
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         ar_scheduler=ar_scheduler,
@@ -242,7 +246,6 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         num_workers=dataloader_settings[
             "num_workers"
         ],  # dataloader_settings['num_workers'],
-        autotune_num_workers=dataloader_settings["autotune_num_workers"],
         prefetch_factor=dataloader_settings["prefetch_factor"],
         prefetch_in_gpu=dataloader_settings["prefetch_in_gpu"],
         drop_last_batch=dataloader_settings["drop_last_batch"],
@@ -326,4 +329,36 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         max_mem="1GB",
     )
     print("   ---> Elapsed time: {:.1f} minutes ".format((time.time() - t_i) / 60))
-    
+
+
+if __name__ == "__main__":
+    default_data_dir = "/ltenas3/0_MCH/RZC/"
+    default_exp_dir = "/home/haddad/exp/"
+    default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
+    default_test_events = "/home/haddad/nowproject/configs/events.json"
+
+    parser = argparse.ArgumentParser(
+        description="Training a numerical precipation nowcasting emulator"
+    )
+    parser.add_argument("--config_file", type=str, default=default_config)
+    parser.add_argument("--test_events_file", type=str, default=default_test_events)
+    parser.add_argument("--data_dir", type=str, default=default_data_dir)
+    parser.add_argument("--exp_dir", type=str, default=default_exp_dir)
+    parser.add_argument("--cuda", type=str, default="0")
+    parser.add_argument("--force", type=str, default="True")
+
+    args = parser.parse_args()
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
+    if args.force == "True":
+        force = True
+    else:
+        force = False
+
+    main(
+        cfg_path=Path(args.config_file),
+        exp_dir_path=Path(args.exp_dir),
+        test_events_path=Path(args.test_events_file),
+        data_dir_path=Path(args.data_dir),
+        force=force,
+    )

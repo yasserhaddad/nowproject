@@ -163,9 +163,9 @@ def get_model_settings(cfg):
     # Retrieve mandatory and optional keys
     mandatory_keys = [
         "architecture_name",
-        "sampling",
-        "sampling_kwargs",
-        "sampling_name",
+        # "sampling",
+        # "sampling_kwargs",
+        # "sampling_name",
     ]
     optional_keys = list(default_model_settings.keys())
 
@@ -173,11 +173,11 @@ def get_model_settings(cfg):
     model_settings["architecture_name"] = cfg["model_settings"].get(
         "architecture_name", None
     )
-    model_settings["sampling"] = cfg["model_settings"].get("sampling", None)
-    model_settings["sampling_kwargs"] = cfg["model_settings"].get(
-        "sampling_kwargs", None
-    )
-    model_settings["sampling_name"] = cfg["model_settings"].get("sampling_name", None)
+    # model_settings["sampling"] = cfg["model_settings"].get("sampling", None)
+    # model_settings["sampling_kwargs"] = cfg["model_settings"].get(
+    #     "sampling_kwargs", None
+    # )
+    # model_settings["sampling_name"] = cfg["model_settings"].get("sampling_name", None)
 
     # Stop if some mandatory keys are missing
     flag_error = False
@@ -522,8 +522,8 @@ def get_model_name(cfg):
 def create_experiment_directories(exp_dir, model_name, force=False):
     """Create the required directory for a specific NowProject model."""
     # Check if the experiment directory already exists
-    exp_dir = os.path.join(exp_dir, model_name)
-    if os.path.exists(exp_dir):
+    exp_dir = exp_dir / model_name
+    if exp_dir.exists():
         if force:
             shutil.rmtree(exp_dir)
         else:
@@ -539,25 +539,23 @@ def create_experiment_directories(exp_dir, model_name, force=False):
 
     ##------------------------------------------------------------------------.
     # Define standard directories
-    model_weights_dir = os.path.join(exp_dir, "model_weights")
-    figures_dir = os.path.join(exp_dir, "figs")
-    figs_skills_dir = os.path.join(figures_dir, "skills")
-    figs_training_info_dir = os.path.join(figures_dir, "training_info")
-    model_predictions_dir = os.path.join(exp_dir, "model_predictions")
-    space_chunked_forecasts_dir = os.path.join(model_predictions_dir, "space_chunked")
-    forecast_chunked_forecasts_dir = os.path.join(
-        model_predictions_dir, "forecast_chunked"
-    )
-    model_skills_dir = os.path.join(exp_dir, "model_skills")
+    model_weights_dir = exp_dir / "model_weights"
+    figures_dir = exp_dir / "figs"
+    figs_skills_dir = figures_dir / "skills"
+    figs_training_info_dir = figures_dir / "training_info"
+    model_predictions_dir = exp_dir / "model_predictions"
+    space_chunked_forecasts_dir = model_predictions_dir / "space_chunked"
+    forecast_chunked_forecasts_dir = model_predictions_dir / "forecast_chunked"
+    model_skills_dir = exp_dir / "model_skills"
 
     ##------------------------------------------------------------------------.
     # Create directories
-    os.makedirs(model_weights_dir, exist_ok=False)
-    os.makedirs(figs_skills_dir, exist_ok=False)
-    os.makedirs(figs_training_info_dir, exist_ok=False)
-    os.makedirs(model_skills_dir, exist_ok=False)
-    os.makedirs(space_chunked_forecasts_dir, exist_ok=False)
-    os.makedirs(forecast_chunked_forecasts_dir, exist_ok=False)
+    model_weights_dir.mkdir(parents=True, exist_ok=False)
+    figs_skills_dir.mkdir(parents=True, exist_ok=False)
+    figs_training_info_dir.mkdir(parents=True, exist_ok=False)
+    model_skills_dir.mkdir(parents=True, exist_ok=False)
+    space_chunked_forecasts_dir.mkdir(parents=True, exist_ok=False)
+    forecast_chunked_forecasts_dir.mkdir(parents=True, exist_ok=False)
 
     ##------------------------------------------------------------------------.
     # Return the experiment directory
@@ -608,14 +606,14 @@ def print_model_description(cfg, dim_info=None):
 ####################
 
 def create_event_time_range(event_dict, target_timezone="Europe/Zurich"):
-    start_time = tz.timezone(event_dict["timezone"]).localize(event_dict["start_time"])\
+    start_time = tz.timezone(event_dict["timezone"]).localize(pd.to_datetime(event_dict["start_time"]))\
                    .astimezone(tz.timezone(target_timezone))
-    return pd.date_range(start=pd.to_datetime(start_time), 
-                         end=pd.to_datetime(start_time) + datetime.timedelta(hours=event_dict["duration"]), 
+    return pd.date_range(start=start_time, 
+                         end=start_time + datetime.timedelta(hours=event_dict["duration"]), 
                          freq="2min30s").to_numpy()
 
 def create_test_events_time_range(fpath):
-    with open(fpath, "r", "utf-8") as f:
+    with open(fpath, "r", encoding="utf-8") as f:
         event_dicts = json.load(f)
         return np.concatenate([create_event_time_range(d) for d in event_dicts])
 

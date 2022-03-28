@@ -1,17 +1,18 @@
+from turtle import forward
 import torch
 from torch.nn import (
     Linear,
     Identity,
     BatchNorm1d,
     BatchNorm2d,
-    F, 
-    Conv2d
+    Conv2d,
+    Upsample
 )
-
+import torch.nn.functional as F
 
 ##----------------------------------------------------------------------------.
 class ConvBlock(torch.nn.Module):
-    """Spherical graph convolution block.
+    """Convolution block.
 
     Parameters
     ----------
@@ -46,8 +47,8 @@ class ConvBlock(torch.nn.Module):
         batch_norm_before_activation=False,
         activation=True,
         activation_fun="relu",
-        padding=0, 
-        dilation=True,
+        padding="valid", 
+        dilation=1,
     ):
 
         super().__init__()
@@ -61,9 +62,9 @@ class ConvBlock(torch.nn.Module):
         # torch.nn.Conv2d(in_chan stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
                         
         self.conv = Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
+            in_channels,
+            out_channels,
+            kernel_size,
             bias=bias,
             padding=padding,
             dilation=dilation,
@@ -78,10 +79,9 @@ class ConvBlock(torch.nn.Module):
     def forward(self, x):
         """Define forward pass of a ConvBlock.
 
-        It expects a tensor with shape: (sample, x, y, time-feature).
+        It expects a tensor with shape: (sample, time, x, y).
         """
         # TODO adapt !!!!
-        x = x.permute
         x = self.conv(x)
         if self.norm and self.bn_before_act:
             # [batch, node, time-feature]
@@ -212,5 +212,39 @@ class ResBlock(torch.nn.Module):
         if self.rezero:
             x_out *= self.rezero_weight
         # Add residual connection
-        x_out += self.res_connection(x)
+        x_out += torch.permute(
+                        self.res_connection(torch.permute(x, (0, 2, 3, 1))), 
+                        (0, 3, 1, 2)
+                    )
         return x_out
+
+
+class Upsampling(torch.nn.Module):
+    def __init__(self, 
+                 in_channels: int, 
+                 mid_channels: int, 
+                 out_channels: int, 
+                 convblock_kwargs: dict,
+                 kernel_size_pooling: int):
+        super().__init__()
+        self.uconv21 = ConvBlock(
+            in_channels, mid_channels, **convblock_kwargs
+        )
+        self.uconv22 = ConvBlock(
+            mid_channels, out_channels, **convblock_kwargs
+        )
+        self.up = Upsample(scale_factor=kernel_size_pooling, mode='bilinear', align_corners=True)
+
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        diffY = x2.size()[2] - x1.size()[2]
+        diffX = x2.size()[3] - x1.size()[3]
+
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
+                        diffY // 2, diffY - diffY // 2])
+        
+        x_cat = torch.cat((x1, x2), dim=1)
+        x = self.uconv21(x_cat)
+        x = self.uconv22(x)
+
+        return x

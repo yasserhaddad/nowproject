@@ -5,11 +5,14 @@ from torch.nn import (
     Linear,
     Identity,
     BatchNorm1d,
-    BatchNorm2d,
-    F, 
-    Conv2d
+    BatchNorm2d, 
+    Conv2d,
+    MaxPool2d,
+    AvgPool2d,
+    Upsample
 )
-from nowproject.layers import ConvBlock, ResBlock
+import torch.nn.functional as F
+from nowproject.layers import ConvBlock, ResBlock, Upsampling
 from nowproject.models import UNetModel, ConvNetModel
 from nowproject.utils_models import check_pool_method
 from nowproject.utils_models import check_skip_connection
@@ -73,7 +76,7 @@ class UNet(UNetModel, torch.nn.Module):
         activation_fun: str = "relu",
         # Pooling options
         pool_method: str = "max",
-        kernel_size_pooling: int = 4,
+        kernel_size_pooling: int = 2,
         # Architecture options
         skip_connection: str = "stack",
         increment_learning: bool = False,
@@ -85,11 +88,13 @@ class UNet(UNetModel, torch.nn.Module):
         self.dim_names = tensor_info["dim_order"]["dynamic"]
         self.input_feature_dim = tensor_info["input_n_feature"]
         self.input_time_dim = tensor_info["input_n_time"]
-        self.input_node_dim = tensor_info["input_shape_info"]["dynamic"]["node"]
+        self.input_y_dim = tensor_info["input_shape_info"]["dynamic"]["y"]
+        self.input_x_dim = tensor_info["input_shape_info"]["dynamic"]["x"]
 
         self.output_time_dim = tensor_info["output_n_time"]
         self.output_feature_dim = tensor_info["output_n_feature"]
-        self.output_node_dim = tensor_info["output_shape_info"]["dynamic"]["node"]
+        self.output_y_dim = tensor_info["output_shape_info"]["dynamic"]["y"]
+        self.output_x_dim = tensor_info["output_shape_info"]["dynamic"]["x"]
 
         ##--------------------------------------------------------------------.
         # Define size of last dimension for ConvChen conv (merging time-feature dimension)
@@ -116,7 +121,7 @@ class UNet(UNetModel, torch.nn.Module):
             "batch_norm_before_activation": batch_norm_before_activation,
             "activation": activation,
             "activation_fun": activation_fun,
-            "padding": "valid",  # TODO GENERALIZE
+            "padding": 1,  # TODO GENERALIZE
         }
         ##--------------------------------------------------------------------.            
         # - Define UNet levels
@@ -128,6 +133,16 @@ class UNet(UNetModel, torch.nn.Module):
         # pool_method, kernel_size_pooling 
         # torch.nn.MaxPool2d(kernel_size, stride=None, padding=0, dilation=1)
         # torch.nn.AvgPool2d(kernel_size, stride=None, padding=0, dilation=1)
+
+        if pool_method == "avg":
+            self.pool1 = AvgPool2d(kernel_size_pooling)
+            self.pool2 = AvgPool2d(kernel_size_pooling)
+        elif pool_method == "max":
+            self.pool1 = MaxPool2d(kernel_size_pooling)
+            self.pool2 = MaxPool2d(kernel_size_pooling)
+        
+        self.unpool1 = Upsample(scale_factor=kernel_size_pooling, mode='bilinear', align_corners=True)
+        self.unpool2 = Upsample(scale_factor=kernel_size_pooling, mode='bilinear', align_corners=True)
         
         ##--------------------------------------------------------------------.
         ### Define Encoding blocks
@@ -155,20 +170,24 @@ class UNet(UNetModel, torch.nn.Module):
         ##--------------------------------------------------------------------.
         ### Decoding blocks
         # Decoding block 2
-        self.uconv21 = ConvBlock(
-            256 * 2, 128 * 2, **convblock_kwargs
-        )
-        self.uconv22 = ConvBlock(
-            128 * 2, 64 * 2, **convblock_kwargs
-        )
+
+        # self.uconv21 = ConvBlock(
+        #     256 * 2, 128 * 2, **convblock_kwargs
+        # )
+        # self.uconv22 = ConvBlock(
+        #     128 * 2, 64 * 2, **convblock_kwargs
+        # )
+        self.up1 = Upsampling(256 * 2, 128 * 2, 64 * 2, convblock_kwargs, kernel_size_pooling)
 
         # Decoding block 1
-        self.uconv11 = ConvBlock(
-            128 * 2, 64 * 2, **convblock_kwargs
-        )
-        self.uconv12 = ConvBlock(
-            64 * 2, 32 * 2,  **convblock_kwargs
-        )
+
+        # self.uconv11 = ConvBlock(
+        #     128 * 2, 64 * 2, **convblock_kwargs
+        # )
+        # self.uconv12 = ConvBlock(
+        #     64 * 2, 32 * 2,  **convblock_kwargs
+        # )  
+        self.up2 = Upsampling(128 * 2, 64 * 2, 32 * 2, convblock_kwargs, kernel_size_pooling)
         
         # This is important for regression tasks 
         special_kwargs = convblock_kwargs.copy()
@@ -194,12 +213,12 @@ class UNet(UNetModel, torch.nn.Module):
         # Reorder and reshape data
         x = (
             x.rename(*self.dim_names)
-            .align_to("sample", "node", "time", "feature")
+            .align_to("sample", "time", "y", "x", "feature")
             .rename(None)
         )  # x.permute(0, 2, 1, 3)
         x = x.reshape(
-            batch_size, self.input_node_dim, self.input_channels
-        )  # reshape to ['sample', 'node', 'time-feature']
+            batch_size, self.input_channels, self.input_y_dim, self.input_x_dim
+        )  # reshape to ['sample', 'channels', 'y', 'x']
         ##--------------------------------------------------------------------.
         # Block 1
         x_enc1 = self.conv1(x)
@@ -209,29 +228,33 @@ class UNet(UNetModel, torch.nn.Module):
         # x_enc1 += self.conv1_res(x)
 
         # Level 2
-        x_enc2_ini, idx1 = self.pool1(x_enc1)
+        x_enc2_ini = self.pool1(x_enc1)
         x_enc2 = self.conv2(x_enc2_ini)
 
         # Level 3
-        x_enc3_ini, idx2 = self.pool2(x_enc2)
+        x_enc3_ini = self.pool2(x_enc2)
         x_enc3 = self.conv3(x_enc3_ini)
 
-        return x_enc3, x_enc2, x_enc1, idx2, idx1  #  x_enc11
+        return x_enc3, x_enc2, x_enc1  #  x_enc11
 
     ##------------------------------------------------------------------------.
-    def decode(self, x_enc3, x_enc2, x_enc1, idx2, idx1):  # x_enc11):
+    def decode(self, x_enc3, x_enc2, x_enc1):  # x_enc11):
         """Define UNet decoder."""
         # Block 2
-        x = self.unpool2(x_enc3, idx2)
-        x_cat = torch.cat((x, x_enc2), dim=2)
-        x = self.uconv21(x_cat)
-        x = self.uconv22(x)
+        x = self.up1(x_enc3, x_enc2)
+        # x = self.unpool2(x_enc3)
+        # # print(x.shape)
+        # x_cat = torch.cat((x, x_enc2), dim=1)
+        # x = self.uconv21(x_cat)
+        # x = self.uconv22(x)
+
 
         # Block 1
-        x = self.unpool1(x, idx1)
-        x_cat = torch.cat((x, x_enc1), dim=2)
-        x = self.uconv11(x_cat)
-        x = self.uconv12(x)
+        x = self.up2(x, x_enc1)
+        # x = self.unpool1(x)
+        # x_cat = torch.cat((x, x_enc1), dim=1)
+        # x = self.uconv11(x_cat)
+        # x = self.uconv12(x)
 
         # Apply conv without batch norm and act fun
         x = self.uconv13(x)
@@ -245,12 +268,13 @@ class UNet(UNetModel, torch.nn.Module):
         batch_size = x.shape[0]  # ['sample', 'node', 'time-feature']
         x = x.reshape(
             batch_size,
-            self.output_node_dim,
             self.output_time_dim,
+            self.output_y_dim,
+            self.output_x_dim,
             self.output_feature_dim,
         )  # ==> ['sample', 'node', 'time', 'feature']
         x = (
-            x.rename(*["sample", "node", "time", "feature"])
+            x.rename(*["sample", "time", "y", "x", "feature"])
             .align_to(*self.dim_names)
             .rename(None)
         )  # x.permute(0, 2, 1, 3)
@@ -303,13 +327,8 @@ class ResNet(ConvNetModel, torch.nn.Module):
     def __init__(
         self,
         tensor_info: Dict,
-        sampling: str,
-        sampling_kwargs: Dict,
         # Convolutions options
         kernel_size_conv: int = 3,
-        conv_type: str = "graph",
-        graph_type: str = "knn",
-        knn: int = 20,
         # Options for classical image convolution on equiangular sampling
         periodic_padding: bool = True,
         # ConvBlock Options
@@ -350,50 +369,19 @@ class ResNet(ConvNetModel, torch.nn.Module):
 
         ##--------------------------------------------------------------------.
         ### Check arguments
-        sampling = check_sampling(sampling)
-        conv_type = check_conv_type(conv_type, sampling)
         skip_connection = check_skip_connection(skip_connection)
 
-        ##--------------------------------------------------------------------.
-        # Derive lonlat ratio from sampling_kwargs if equiangular
-        if sampling == "equiangular":
-            lonlat_ratio = sampling_kwargs["nlon"] / sampling_kwargs["nlat"]
-        else:
-            lonlat_ratio = None
         ##--------------------------------------------------------------------.
         ### Define ConvBlock options
         convblock_kwargs = {
             "kernel_size": kernel_size_conv,
-            "conv_type": conv_type,
             "bias": bias,
             "batch_norm": batch_norm,
             "batch_norm_before_activation": batch_norm_before_activation,
             "activation": activation,
             "activation_fun": activation_fun,
-            # Options for conv_type = "image", sampling='equiangular'
             "periodic_padding": periodic_padding,
-            "lonlat_ratio": lonlat_ratio,
         }
-        ##--------------------------------------------------------------------.
-        ### Define graph and laplacian
-        # - Update knn based on model settings
-        if sampling != "equiangular":
-            # (pygsp.graphs.SphereEquiangular do not accept k)
-            sampling_kwargs["k"] = knn
-
-        sampling_list = [sampling]
-        sampling_kwargs_list = [sampling_kwargs]
-
-        ##--------------------------------------------------------------------.
-        ### Initialize graphs and laplacians
-        # - If conv_type == 'image', self.laplacians = [None] * UNet_depth
-        # - self.init_graph_and_laplacians() defines self.graphs and self.laplacians
-        self.init_graph_and_laplacians(
-            sampling_list=sampling_list,
-            sampling_kwargs_list=sampling_kwargs_list,
-            graph_type=graph_type,
-            conv_type=conv_type,
-        )
 
         ##--------------------------------------------------------------------.
         ### Define ResNet Convolutional Layers

@@ -34,18 +34,18 @@ def reshape_tensors_4_loss(Y_pred, Y_obs, dim_info_dynamic):
     ]
     # Retrieve dimensions to flat out (consider it as datapoint for loss computation)
     vars_to_flatten = np.array(ordered_dynamic_variables_)[
-        np.isin(ordered_dynamic_variables_, ["node", "feature"], invert=True)
+        np.isin(ordered_dynamic_variables_, ["y", "x", "feature"], invert=True)
     ].tolist()
     # Reshape to (data_points, node, feature)
     Y_pred = (
         Y_pred.rename(*ordered_dynamic_variables_)
-        .align_to(..., "node", "feature")
+        .align_to(..., "y", "x", "feature")
         .flatten(vars_to_flatten, "data_points")
         .rename(None)
     )
     Y_obs = (
         Y_obs.rename(*ordered_dynamic_variables_)
-        .align_to(..., "node", "feature")
+        .align_to(..., "y", "x", "feature")
         .flatten(vars_to_flatten, "data_points")
         .rename(None)
     )

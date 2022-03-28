@@ -579,7 +579,7 @@ if __name__ == "__main__":
     default_config = "/home/ghiggi/Projects/deepsphere-weather/configs/UNetSpherical/Healpix_400km/MaxAreaPool-Graph_knn.json"
 
     parser = argparse.ArgumentParser(
-        description="Training a numerical weather prediction model emulator"
+        description="Training a numerical precipation nowcasting emulator"
     )
     parser.add_argument("--config_file", type=str, default=default_config)
     parser.add_argument("--data_dir", type=str, default=default_data_dir)

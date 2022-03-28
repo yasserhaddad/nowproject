@@ -10,7 +10,7 @@ from nowproject.utils.config import (
 )
 
 # - Config folder
-config_path = pathlib.Path("/home/haddad/NowProject/configs")
+config_path = pathlib.Path("/home/haddad/nowproject/configs")
 
 ##----------------------------------------------------------------------------.
 # Get default settings
@@ -73,11 +73,11 @@ for architecture_name in architecture_names:
 
         # Create config directory
         tmp_dir = config_path / architecture_name
-        tmp_dir.mkdir(exist_ok=True)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
         # Write config file
         tmp_config_name = (
             "-".join(
-                [pool_method + "Pool" + kernel_size_pooling, "Conv" + kernel_size_conv]
+                [pool_method + "Pool" + str(kernel_size_pooling), "Conv" + str(kernel_size_conv)]
             )
             + ".json"
         )

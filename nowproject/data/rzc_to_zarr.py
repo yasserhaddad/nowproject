@@ -198,28 +198,28 @@ def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Pat
                        compressor: Any = "auto", encoding: dict = ZARR_ENCODING):
 
     temporal_chunk_filepath = output_dir_path / "rzc_temporal_chunk.zarr"
-    # if temporal_chunk_filepath.exists():
-    #     shutil.rmtree(temporal_chunk_filepath)
+    if temporal_chunk_filepath.exists():
+        shutil.rmtree(temporal_chunk_filepath)
 
-    # fpaths = [p.as_posix() for p in sorted(list(data_dir_path.glob("*/RZC*.nc")))]
-    # list_ds = [xr.open_dataset(p, chunks={"time": 576, "x": -1, "y": -1}) for p in fpaths]
-    # ds = xr.concat(list_ds, dim="time")
-    # ds.attrs = METADATA
+    fpaths = [p.as_posix() for p in sorted(list(data_dir_path.glob("*/RZC*.nc")))]
+    list_ds = [xr.open_dataset(p, chunks={"time": 576, "x": -1, "y": -1}) for p in fpaths]
+    ds = xr.concat(list_ds, dim="time")
+    ds.attrs = METADATA
 
-    # write_zarr(
-    #     temporal_chunk_filepath.as_posix(),
-    #     ds,
-    #     chunks={"time": 25, "y": -1, "x": -1},
-    #     compressor=compressor,
-    #     rounding=None,
-    #     encoding=encoding,
-    #     consolidated=True,
-    #     append=False,
-    #     show_progress=True,
-    # )
+    write_zarr(
+        temporal_chunk_filepath.as_posix(),
+        ds,
+        chunks={"time": 25, "y": -1, "x": -1},
+        compressor=compressor,
+        rounding=None,
+        encoding=encoding,
+        consolidated=True,
+        append=False,
+        show_progress=True,
+    )
 
-    # ds = ds.chunk({"time": 25, "y": -1, "x": -1})
-    # ds.to_zarr(temporal_chunk_filepath, encoding=encoding, consolidated=True)
+    ds = ds.chunk({"time": 25, "y": -1, "x": -1})
+    ds.to_zarr(temporal_chunk_filepath, encoding=encoding, consolidated=True)
 
     ds = xr.open_zarr(temporal_chunk_filepath)
     ds['radar_quality'] = ds['radar_quality'].astype(str)
