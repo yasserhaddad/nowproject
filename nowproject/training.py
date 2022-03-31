@@ -34,6 +34,7 @@ from xforecasting.utils.torch import (
 from xforecasting.training_info import AR_TrainingInfo
 from xforecasting.utils.xr import xr_is_aligned
 from xforecasting.utils.swag import bn_update_with_loader
+from xforecasting.training_autoregressive import timing_AR_Training
 
 
 def AutoregressiveTraining(
@@ -216,6 +217,7 @@ def AutoregressiveTraining(
         else:
             validation_ds = None
         print("- Creation of AutoregressiveDatasets: {:.0f}s".format(time.time() - t_i))
+
         ##--------------------------------------------------------------------.
         ## Create DataLoaders
         # - Prefetch (prefetch_factor*num_workers) batches parallelly into CPU
@@ -278,6 +280,29 @@ def AutoregressiveTraining(
             ar_training_info = AR_TrainingInfo(
                 ar_iterations=ar_iterations, epochs=epochs, ar_scheduler=ar_scheduler
             )
+        
+        timing_AR_Training(
+            training_ds,
+            model,
+            optimizer,
+            criterion,
+            reshape_tensors_4_loss,
+            ar_scheduler,
+            ar_training_strategy=ar_training_strategy,
+            # DataLoader options
+            batch_size=training_batch_size,
+            shuffle=shuffle,
+            shuffle_seed=shuffle_seed,
+            num_workers=num_workers,
+            prefetch_in_gpu=prefetch_in_gpu,
+            prefetch_factor=2,
+            pin_memory=pin_memory,
+            asyncronous_gpu_transfer=asyncronous_gpu_transfer,
+            # Timing options
+            training_mode=True,
+            n_repetitions=30,
+            verbose=True,
+        )
 
         ##--------------------------------------------------------------------.
         # Get dimension and feature infos

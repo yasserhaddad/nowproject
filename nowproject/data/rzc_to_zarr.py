@@ -218,9 +218,6 @@ def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Pat
         show_progress=True,
     )
 
-    ds = ds.chunk({"time": 25, "y": -1, "x": -1})
-    ds.to_zarr(temporal_chunk_filepath, encoding=encoding, consolidated=True)
-
     ds = xr.open_zarr(temporal_chunk_filepath)
     ds['radar_quality'] = ds['radar_quality'].astype(str)
     ds['radar_availability'] = ds['radar_availability'].astype(str)

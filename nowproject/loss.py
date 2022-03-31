@@ -70,16 +70,16 @@ class WeightedMSELoss(nn.MSELoss):
     def forward(self, pred, label):
         mse = super(WeightedMSELoss, self).forward(pred, label)
         weights = self.weights
-        n_batch, num_nodes, n_val = mse.shape
+        n_batch, n_y, n_x, n_val = mse.shape
         if weights is None:
-            weights = torch.ones((num_nodes), dtype=mse.dtype, device=mse.device)
-        if num_nodes != len(weights):
+            weights = torch.ones((n_y, n_x), dtype=mse.dtype, device=mse.device)
+        if (n_y, n_x) != weights.shape:
             raise ValueError(
                 "The number of weights does not match the the number of pixels. {} != {}".format(
-                    len(weights), num_nodes
+                    mse.shape, (n_y, n_x)
                 )
             )
-        weights = weights.view(1, -1, 1).to(mse.device)
+        weights = weights.view(1, n_y, n_x, 1).to(mse.device)
         weighted_mse = mse * weights
         if self.weighted_mse_reduction == "sum":
             return torch.sum(weighted_mse) * len(weights)

@@ -57,6 +57,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+    # data_dynamic["precip"] = (data_dynamic["precip"] * 100).astype("uint16")
     data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]].fillna(0)
     data_static = None
     data_bc = None
@@ -225,6 +226,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     dask.config.set(
         scheduler="synchronous"
     )  # This is very important otherwise the dataloader hang
+
     ar_training_info = AutoregressiveTraining(
         model=model,
         model_fpath=model_fpath,
@@ -332,8 +334,8 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
 
 
 if __name__ == "__main__":
-    default_data_dir = "/ltenas3/0_MCH/RZC/"
-    default_exp_dir = "/home/haddad/exp/"
+    default_data_dir = "/ltenas3/0_Data/NowProject/"
+    default_exp_dir = "/home/haddad/experiments/"
     default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
     default_test_events = "/home/haddad/nowproject/configs/events.json"
 
