@@ -57,7 +57,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
-    # data_dynamic["precip"] = (data_dynamic["precip"] * 100).astype("uint16")
+    data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
     data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]].fillna(0)
     data_static = None
     data_bc = None
