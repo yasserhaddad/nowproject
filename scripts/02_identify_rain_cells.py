@@ -65,8 +65,8 @@ def find_patches(arr: np.ndarray, threshold: float = 0.04, patch_size: int = 128
             
             print([idx[0], idx[0]+patch_size, idx[1], idx[1]+patch_size])
 
-            elems = get_precipitation_pixels_in_patch(arr[idx[0]:idx[0]+patch_size, idx[1]:idx[1]+patch_size], 
-                                                      threshold, idx)
+            elems = get_precipitation_pixels_in_patch(arr[idx[0]:idx[0]+patch_size, 
+                                                          idx[1]:idx[1]+patch_size], threshold, idx)
             
             if len(elems) > min_nb_elems_in_patch:
                 patches_idx.append(idx)
