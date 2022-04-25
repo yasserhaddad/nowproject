@@ -15,7 +15,7 @@ from multiprocessing import Pool, cpu_count
 
 import zarr
 from xforecasting.utils.zarr import rechunk_Dataset, write_zarr
-from data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
+from .data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
 
 import warnings
 from warnings import warn
