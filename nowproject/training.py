@@ -281,28 +281,28 @@ def AutoregressiveTraining(
                 ar_iterations=ar_iterations, epochs=epochs, ar_scheduler=ar_scheduler
             )
         
-        timing_AR_Training(
-            training_ds,
-            model,
-            optimizer,
-            criterion,
-            reshape_tensors_4_loss,
-            ar_scheduler,
-            ar_training_strategy=ar_training_strategy,
-            # DataLoader options
-            batch_size=training_batch_size,
-            shuffle=shuffle,
-            shuffle_seed=shuffle_seed,
-            num_workers=num_workers,
-            prefetch_in_gpu=prefetch_in_gpu,
-            prefetch_factor=2,
-            pin_memory=pin_memory,
-            asyncronous_gpu_transfer=asyncronous_gpu_transfer,
-            # Timing options
-            training_mode=True,
-            n_repetitions=30,
-            verbose=True,
-        )
+        # timing_AR_Training(
+        #     training_ds,
+        #     model,
+        #     optimizer,
+        #     criterion,
+        #     reshape_tensors_4_loss,
+        #     ar_scheduler,
+        #     ar_training_strategy=ar_training_strategy,
+        #     # DataLoader options
+        #     batch_size=training_batch_size,
+        #     shuffle=shuffle,
+        #     shuffle_seed=shuffle_seed,
+        #     num_workers=num_workers,
+        #     prefetch_in_gpu=prefetch_in_gpu,
+        #     prefetch_factor=2,
+        #     pin_memory=pin_memory,
+        #     asyncronous_gpu_transfer=asyncronous_gpu_transfer,
+        #     # Timing options
+        #     training_mode=True,
+        #     n_repetitions=30,
+        #     verbose=True,
+        # )
 
         ##--------------------------------------------------------------------.
         # Get dimension and feature infos

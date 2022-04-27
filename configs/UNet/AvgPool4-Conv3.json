@@ -26,11 +26,11 @@
         "autotune_num_workers": false
     },
     "training_settings": {
-        "epochs": 15,
+        "epochs": 1,
         "ar_training_strategy": "RNN",
         "learning_rate": 0.007,
-        "training_batch_size": 8,
-        "validation_batch_size": 8,
+        "training_batch_size": 16,
+        "validation_batch_size": 16,
         "scoring_interval": 30,
         "save_model_each_epoch": false,
         "numeric_precision": "float32",

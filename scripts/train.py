@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import argparse
 from pathlib import Path
 
@@ -36,6 +37,8 @@ from nowproject.utils.config import (
     create_test_events_time_range
 )
 
+from xverif import xverif
+
 # Project specific functions
 import nowproject.architectures as dl_architectures
 from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
@@ -57,8 +60,9 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+    data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
     data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
-    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]].fillna(0)
+    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
     data_static = None
     data_bc = None
 
@@ -68,9 +72,11 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
-    training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    test_events = create_test_events_time_range(test_events_path).astype("M8[s]")
+    # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
+    # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
+    training_years = np.array(["2018-10-01T00:00", "2018-10-01T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-01-01T23:57:30"], dtype="M8[s]")
+    test_events = create_test_events_time_range(test_events_path)[:1]
 
     # - Split data sets
     t_i = time.time()
@@ -80,7 +86,8 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     validation_data_dynamic = data_dynamic.sel(
         time=slice(validation_years[0], validation_years[-1])
     )
-    test_data_dynamic = data_dynamic.sel(time=test_events)
+    # test_data_dynamic = [data_dynamic.sel(time=event) for event in test_events]
+    # test_data_dynamic = data_dynamic.sel(time=np.concatenate(test_events))
 
     print(
         "- Splitting data into train, validation and test sets: {:.2f}s".format(
@@ -149,16 +156,16 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         cfg["model_settings"]["model_name_prefix"] = None
         cfg["model_settings"]["model_name_suffix"] = None
 
-    exp_dir = create_experiment_directories(
+    model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, force=force
     )  # force=True will delete existing directory
 
     # Define model weights filepath
-    model_fpath = exp_dir_path / "model_weights" / "model.h5"
+    model_fpath = model_dir / "model_weights" / "model.h5"
 
     ##------------------------------------------------------------------------.
     # Write config file in the experiment directory
-    write_config_file(cfg=cfg, fpath=exp_dir / "config.json")
+    write_config_file(cfg=cfg, fpath=model_dir / "config.json")
 
     ##------------------------------------------------------------------------.
     # - Define custom loss function
@@ -272,22 +279,34 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         device=device,
     )
 
+    ##------------------------------------------------------------------------.
+    ### Create plots related to training evolution
+    print("========================================================================================")
+    print("- Creating plots to investigate training evolution")
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.06))
+
     ##-------------------------------------------------------------------------.
     ### - Create predictions
     print("========================================================================================")
     print("- Running predictions")
     forecast_zarr_fpath = (
-        exp_dir_path / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
-    ).as_posix()
-    dask.config.set(scheduler="synchronous")  # This is very important otherwise the dataloader hang
-    # TODO: specify forecast_reference_times into AutoregressivePredictions
-    # --> Need to define timesteps/events where we want to run verification 
-    # ---> Make no sense to make it run when no rain ! 
+        model_dir / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+    )
+    if forecast_zarr_fpath.exists():
+        shutil.rmtree(forecast_zarr_fpath)
+
+    dask.config.set(scheduler="synchronous")  # This is very important otherwise the dataloader hang 
+    # ds_forecasts = []
+    # for i, event in enumerate(test_events):
+    data_dynamic['radar_quality'] = data_dynamic['radar_quality'].astype(str)
+    data_dynamic['radar_availability'] = data_dynamic['radar_availability'].astype(str)
+    data_dynamic['radar_names'] = data_dynamic['radar_names'].astype(str)
+
     ds_forecasts = AutoregressivePredictions(
         model=model,
-        forecast_reference_times=test_events, 
+        forecast_reference_times=np.concatenate(test_events), 
         # Data
-        data_dynamic=test_data_dynamic,
+        data_dynamic=data_dynamic,
         data_static=data_static,
         data_bc=None,
         scaler_transform=None,
@@ -307,11 +326,14 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         stack_most_recent_prediction=ar_settings["stack_most_recent_prediction"],
         ar_iterations=20,  # How many time to autoregressive iterate
         # Save options
-        zarr_fpath=forecast_zarr_fpath,  # None --> do not write to disk
+        zarr_fpath=forecast_zarr_fpath.as_posix(),  # None --> do not write to disk
         rounding=2,  # Default None. Accept also a dictionary
         compressor="auto",  # Accept also a dictionary per variable
         chunks="auto",
     )
+
+    ds_forecasts = xr.open_dataset(forecast_zarr_fpath)
+    print(ds_forecasts)
     ##------------------------------------------------------------------------.
     ### Reshape forecast Dataset for verification
     # - For efficient verification, data must be contiguous in time, but chunked over space (and leadtime)
@@ -322,16 +344,53 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     dask.config.set(scheduler="threads")
     t_i = time.time()
     verification_zarr_fpath = (
-        exp_dir_path / "model_predictions" / "space_chunked" / "test_forecasts.zarr"
+        model_dir / "model_predictions" / "space_chunked" / "test_forecasts.zarr"
     ).as_posix()
+
+    ds_forecasts = ds_forecasts.drop_dims("time")
+
+    # Check the chunk size of coords. If chunk size > coord shape, chunk size = coord shape.
+    for coord in ds_forecasts.coords:
+        if "chunks" in ds_forecasts[coord].encoding:
+            new_chunks = []
+            for i, c in enumerate(ds_forecasts[coord].encoding["chunks"]):
+                if c >= ds_forecasts[coord].shape[i]:
+                    new_chunks.append(ds_forecasts[coord].shape[i])
+                else:
+                    new_chunks.append(c)
+            ds_forecasts[coord].encoding["chunks"] = tuple(new_chunks)
+
+
     ds_verification_format = rechunk_forecasts_for_verification(
         ds=ds_forecasts,
         chunks="auto",
         target_store=verification_zarr_fpath,
-        max_mem="1GB",
+        max_mem="30GB",
     )
     print("   ---> Elapsed time: {:.1f} minutes ".format((time.time() - t_i) / 60))
+    ##------------------------------------------------------------------------.
+    ### - Run deterministic verification
+    print("========================================================================================")
+    print("- Run deterministic verification")
+    # dask.config.set(scheduler='processes')
+    # - Compute skills
+    ds_skill = xverif.deterministic(
+        pred=ds_verification_format.load().chunk({"x": 1, "y": 1}),
+        obs=data_dynamic.sel(time=ds_verification_format.time).load().chunk({"x": 1, "y": 1}),
+        forecast_type="continuous",
+        aggregating_dim="time",
+    )
+    # - Save sptial skills
+    ds_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc"))
 
+    ##------------------------------------------------------------------------.
+    ### - Create verification summary plots and maps
+    print("========================================================================================")
+    print("- Create verification summary plots and maps")
+    ds_averaged_skill = ds_skill.mean(dim=["y", "x"])
+    
+    # - Save averaged skills
+    ds_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_global_skill.nc")
 
 if __name__ == "__main__":
     default_data_dir = "/ltenas3/0_Data/NowProject/"
