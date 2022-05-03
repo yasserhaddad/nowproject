@@ -40,9 +40,17 @@ from nowproject.utils.config import (
 from xverif import xverif
 
 # Project specific functions
+from torch import nn
 import nowproject.architectures as dl_architectures
 from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
+from nowproject.utils.plot import (
+    plot_skill_maps, 
+    plot_averaged_skill,
+    plot_averaged_skills, 
+    plot_skills_distribution
+)
+from nowproject.data.data_config import METADATA
 
 def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     """General function for training models."""
@@ -61,8 +69,9 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     # Load Zarr Datasets
     data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
     data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
-    data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
-    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
+    # data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
+    data_dynamic = data_dynamic.sel({"y": list(range(835, 470, -1)), "x": list(range(60, 300))})
+    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]].fillna(0)
     data_static = None
     data_bc = None
 
@@ -74,9 +83,9 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ## - Defining time split for training
     # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-10-01T00:00", "2018-10-01T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-01-01T23:57:30"], dtype="M8[s]")
-    test_events = create_test_events_time_range(test_events_path)[:1]
+    training_years = np.array(["2018-10-01T00:00", "2018-10-31T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
+    test_events = create_test_events_time_range(test_events_path)[:5]
 
     # - Split data sets
     t_i = time.time()
@@ -332,8 +341,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         chunks="auto",
     )
 
-    ds_forecasts = xr.open_dataset(forecast_zarr_fpath)
-    print(ds_forecasts)
+    ds_forecasts = xr.open_zarr(forecast_zarr_fpath)
     ##------------------------------------------------------------------------.
     ### Reshape forecast Dataset for verification
     # - For efficient verification, data must be contiguous in time, but chunked over space (and leadtime)
@@ -363,7 +371,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
 
     ds_verification_format = rechunk_forecasts_for_verification(
         ds=ds_forecasts,
-        chunks="auto",
+        chunks={'forecast_reference_time': -1, 'leadtime': 1, "x": 30, "y": 30},
         target_store=verification_zarr_fpath,
         max_mem="30GB",
     )
@@ -391,6 +399,41 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     
     # - Save averaged skills
     ds_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_global_skill.nc")
+
+    # bbox = (451000, 30000, 850000, 319000)
+    bbox = (470000, 60000, 835000, 300000)
+    # - Create spatial maps
+    plot_skill_maps(
+        ds_skill=ds_skill,
+        figs_dir=(model_dir / "figs" / "skills" / "SpatialSkill"),
+        geodata=METADATA,
+        bbox=bbox,
+        skills=["BIAS", "RMSE", "rSD", "pearson_R2", "error_CoV"],
+        variables=["feature"],
+        suffix="",
+        prefix="",
+    )
+
+    # - Create skill vs. leadtime plots
+    plot_averaged_skill(ds_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "RMSE_skill.png"
+    )
+    plot_averaged_skills(ds_averaged_skill, variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "averaged_skill.png"
+    )
+    plot_skills_distribution(ds_skill, variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "skills_distribution.png",
+    )
+
+    ##-------------------------------------------------------------------------.
+    print("========================================================================================")
+    print(
+        "- Model training and verification terminated. Elapsed time: {:.1f} hours ".format(
+            (time.time() - t_start) / 60 / 60
+        )
+    )
+    print("========================================================================================")
+    ##-------------------------------------------------------------------------.
 
 if __name__ == "__main__":
     default_data_dir = "/ltenas3/0_Data/NowProject/"

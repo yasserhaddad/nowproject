@@ -59,7 +59,7 @@ forecast_zarr_fpath = (
         model_dir / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
     )
 
-ds_forecasts = xr.open_dataset(forecast_zarr_fpath)
+ds_forecasts = xr.open_zarr(forecast_zarr_fpath)
 print(ds_forecasts)
 ##------------------------------------------------------------------------.
 ### Reshape forecast Dataset for verification
@@ -113,3 +113,7 @@ ds_skill = xverif.deterministic(
     )
 
 ds_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc"))
+
+ds_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_spatial_skill.nc")
+
+ds_averaged_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_global_skill.nc")
