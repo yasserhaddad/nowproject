@@ -16,8 +16,6 @@ from nowproject.utils.plot import (
     plot_averaged_skills,
     plot_skills_distribution
 )
-from nowproject.data.data_config import METADATA
-
 
 # %load_ext autoreload
 # %autoreload 2

@@ -43,17 +43,68 @@ from xverif import xverif
 import nowproject.architectures as dl_architectures
 from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
+from nowproject.utils.scalers import RainScaler
+
+# %load_ext autoreload
+# %autoreload 2
+
 
 model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling/")
 
 
-zarr_dir_path = Path("/ltenas3/0_Data/NowProject/zarr/")
+# zarr_dir_path = Path("/ltenas3/0_Data/NowProject/zarr/")
 
-ds = xr.open_zarr(zarr_dir_path / "rzc_temporal_chunk.zarr")
+# ds = xr.open_zarr(zarr_dir_path / "rzc_temporal_chunk.zarr")
 
-ds = ds.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
+# ds = ds.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
 
-ds = ds.rename({"precip": "feature"})
+# ds = ds.rename({"precip": "feature"})
+
+data_dir_path = Path("/ltenas3/0_Data/NowProject/")
+
+data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+data_dynamic = data_dynamic.reset_coords(
+    ["radar_names", "radar_quality", "radar_availability"], 
+    drop=True
+    )
+data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
+# data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
+data_dynamic = data_dynamic.sel(
+    {"y": list(range(835, 470, -1)), 
+    "x": list(range(60, 300))}
+    )
+data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
+
+test = data_dynamic.isel(time=slice(0, 100))
+scaler = RainScaler(feature_min=np.log10(0.025), feature_max=np.log10(100), threshold=np.log10(0.1))
+
+
+test_bins = data_dynamic.isel(time=slice(0, 100)).copy()
+np_bins = np.ones(test_bins.feature.shape)
+np_bins[:10, 150:250, 200:300] = 3
+np_bins[20:30, 150:250, 200:300] = 9
+np_bins[40:60, 150:250, 200:300] = 14
+
+bins = [0.01, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 200.0]
+# bins = np.logspace(start=np.log10(0.001), stop=np.log10(200), num=10)
+centres = [0] + [(bins[i] + bins[i+1])/2 for i in range(0, len(bins)-1)] + [np.nan]
+
+
+
+test_transformed = scaler.transform(test, variable_dim="feature")
+test_untransformed = scaler.inverse_transform(test_transformed, variable_dim="feature")
+
+
+dem_dir_path = Path("/ltenas3/0_GIS/DEM Switzerland/")
+dem = xr.open_rasterio(dem_dir_path / "srtm_Switzerland_EPSG21781.tif")
+dem = dem.isel(band=0, drop=True)
+dem = dem.rename({"x": "y", "y": "x"})
+new_y = [y*1000 for y in data_dynamic.y.values[::-1]]
+new_x = [x*1000 for x in data_dynamic.x.values]
+dem = dem.interp(coords={"x": new_x, "y": new_y})
+dem["x"] = dem["x"] / 1000
+dem["y"] = dem["y"] / 1000
+dem = dem.reindex(y=list(reversed(dem.y))).transpose("y", "x")
 
 forecast_zarr_fpath = (
         model_dir / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
@@ -101,9 +152,9 @@ verification_zarr_fpath = (
 ).as_posix()
 
 
-ds_verification_format = xr.open_dataset(verification_zarr_fpath).load()
+ds_verification_format = xr.open_zarr(verification_zarr_fpath).load()
 
-selection = ds.sel(time=ds_verification_format.time).load()
+selection = data_dynamic.sel(time=ds_verification_format.time).load()
 
 ds_skill = xverif.deterministic(
         pred=ds_verification_format.chunk({"x": 1, "y": 1}),

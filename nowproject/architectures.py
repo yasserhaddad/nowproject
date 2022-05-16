@@ -129,11 +129,6 @@ class UNet(UNetModel, torch.nn.Module):
        
         ##--------------------------------------------------------------------.
         ### Define Pooling - Unpooling layers
-        # --> https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
-        # pool_method, kernel_size_pooling 
-        # torch.nn.MaxPool2d(kernel_size, stride=None, padding=0, dilation=1)
-        # torch.nn.AvgPool2d(kernel_size, stride=None, padding=0, dilation=1)
-
         if pool_method == "avg":
             self.pool1 = AvgPool2d(kernel_size_pooling)
             self.pool2 = AvgPool2d(kernel_size_pooling)
@@ -170,23 +165,8 @@ class UNet(UNetModel, torch.nn.Module):
         ##--------------------------------------------------------------------.
         ### Decoding blocks
         # Decoding block 2
-
-        # self.uconv21 = ConvBlock(
-        #     256 * 2, 128 * 2, **convblock_kwargs
-        # )
-        # self.uconv22 = ConvBlock(
-        #     128 * 2, 64 * 2, **convblock_kwargs
-        # )
         self.up1 = Upsampling(256 * 2, 128 * 2, 64 * 2, convblock_kwargs, kernel_size_pooling)
-
         # Decoding block 1
-
-        # self.uconv11 = ConvBlock(
-        #     128 * 2, 64 * 2, **convblock_kwargs
-        # )
-        # self.uconv12 = ConvBlock(
-        #     64 * 2, 32 * 2,  **convblock_kwargs
-        # )  
         self.up2 = Upsampling(128 * 2, 64 * 2, 32 * 2, convblock_kwargs, kernel_size_pooling)
         
         # This is important for regression tasks 
@@ -242,26 +222,12 @@ class UNet(UNetModel, torch.nn.Module):
         """Define UNet decoder."""
         # Block 2
         x = self.up1(x_enc3, x_enc2)
-        # x = self.unpool2(x_enc3)
-        # # print(x.shape)
-        # x_cat = torch.cat((x, x_enc2), dim=1)
-        # x = self.uconv21(x_cat)
-        # x = self.uconv22(x)
-
 
         # Block 1
         x = self.up2(x, x_enc1)
-        # x = self.unpool1(x)
-        # x_cat = torch.cat((x, x_enc1), dim=1)
-        # x = self.uconv11(x_cat)
-        # x = self.uconv12(x)
 
         # Apply conv without batch norm and act fun
         x = self.uconv13(x)
-
-        # x_cat = torch.cat((x, x_enc11), dim=2)
-        # Apply conv without batch norm and act fun
-        # x = self.uconv13(x_cat)
 
         ##--------------------------------------------------------------------.
         # Reshape data to ['sample', 'time', 'node', 'feature']

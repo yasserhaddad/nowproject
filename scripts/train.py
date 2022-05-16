@@ -50,9 +50,12 @@ from nowproject.utils.plot import (
     plot_averaged_skills, 
     plot_skills_distribution
 )
+from nowproject.utils.scalers import RainScaler, RainBinScaler
 from nowproject.data.data_config import METADATA
+from nowproject.data.data_utils import load_static_topo_data
 
-def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
+def main(cfg_path, data_dir_path, static_data_dir_path, test_events_path, 
+         exp_dir_path, force=False):
     """General function for training models."""
 
     t_start = time.time()
@@ -68,24 +71,35 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+    data_dynamic = data_dynamic.reset_coords(
+        ["radar_names", "radar_quality", "radar_availability"], 
+        drop=True
+        )
     data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
     # data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
-    data_dynamic = data_dynamic.sel({"y": list(range(835, 470, -1)), "x": list(range(60, 300))})
-    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]].fillna(0)
-    data_static = None
+    data_dynamic = data_dynamic.sel(
+        {"y": list(range(835, 470, -1)), 
+        "x": list(range(60, 300))}
+        )
+    data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
+    data_static = load_static_topo_data(static_data_dir_path, data_dynamic)
     data_bc = None
 
     ##------------------------------------------------------------------------.
     # Load scalers
+    scaler = RainScaler(feature_min=np.log10(0.025), 
+                        feature_max=np.log10(150), 
+                        threshold=np.log10(0.1))
+
 
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
     # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-10-01T00:00", "2018-10-31T23:57:30"], dtype="M8[s]")
+    training_years = np.array(["2018-10-01T00:00", "2018-10-10T23:57:30"], dtype="M8[s]")
     validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
-    test_events = create_test_events_time_range(test_events_path)[:5]
+    test_events = create_test_events_time_range(test_events_path)[:1]
 
     # - Split data sets
     t_i = time.time()
@@ -259,7 +273,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         training_data_bc=None,
         validation_data_dynamic=validation_data_dynamic,
         validation_data_bc=None,
-        scaler=None,
+        scaler=scaler,
         # Dataloader settings
         num_workers=dataloader_settings[
             "num_workers"
@@ -307,9 +321,6 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
     dask.config.set(scheduler="synchronous")  # This is very important otherwise the dataloader hang 
     # ds_forecasts = []
     # for i, event in enumerate(test_events):
-    data_dynamic['radar_quality'] = data_dynamic['radar_quality'].astype(str)
-    data_dynamic['radar_availability'] = data_dynamic['radar_availability'].astype(str)
-    data_dynamic['radar_names'] = data_dynamic['radar_names'].astype(str)
 
     ds_forecasts = AutoregressivePredictions(
         model=model,
@@ -318,8 +329,8 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         data_dynamic=data_dynamic,
         data_static=data_static,
         data_bc=None,
-        scaler_transform=None,
-        scaler_inverse=None,
+        scaler_transform=scaler,
+        scaler_inverse=scaler,
         # Dataloader options
         device=device,
         batch_size=50,  # number of forecasts per batch
@@ -355,7 +366,8 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
         model_dir / "model_predictions" / "space_chunked" / "test_forecasts.zarr"
     ).as_posix()
 
-    ds_forecasts = ds_forecasts.drop_dims("time")
+    if "time" in list(ds_forecasts.dims.keys()):
+        ds_forecasts = ds_forecasts.drop_dims("time")
 
     # Check the chunk size of coords. If chunk size > coord shape, chunk size = coord shape.
     for coord in ds_forecasts.coords:
@@ -437,6 +449,7 @@ def main(cfg_path, data_dir_path, test_events_path, exp_dir_path, force=False):
 
 if __name__ == "__main__":
     default_data_dir = "/ltenas3/0_Data/NowProject/"
+    default_static_data_dir = "/ltenas3/0_GIS/DEM Switzerland/"
     default_exp_dir = "/home/haddad/experiments/"
     default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
     default_test_events = "/home/haddad/nowproject/configs/events.json"
@@ -447,6 +460,7 @@ if __name__ == "__main__":
     parser.add_argument("--config_file", type=str, default=default_config)
     parser.add_argument("--test_events_file", type=str, default=default_test_events)
     parser.add_argument("--data_dir", type=str, default=default_data_dir)
+    parser.add_argument("--static_data_dir", type=str, default=default_static_data_dir)
     parser.add_argument("--exp_dir", type=str, default=default_exp_dir)
     parser.add_argument("--cuda", type=str, default="0")
     parser.add_argument("--force", type=str, default="True")
@@ -462,6 +476,7 @@ if __name__ == "__main__":
     main(
         cfg_path=Path(args.config_file),
         exp_dir_path=Path(args.exp_dir),
+        static_data_dir_path=Path(args.static_data_dir),
         test_events_path=Path(args.test_events_file),
         data_dir_path=Path(args.data_dir),
         force=force,
