@@ -80,8 +80,14 @@ def read_rzc_file(input_path: pathlib.Path,
     if metranet_header is None:
         metranet_header = {}
 
-    x = np.arange(BOTTOM_LEFT_COORDINATES[1], BOTTOM_LEFT_COORDINATES[1] + rzc.shape[1])
-    y = np.arange(BOTTOM_LEFT_COORDINATES[0] + rzc.shape[0] - 1, BOTTOM_LEFT_COORDINATES[0] - 1, -1)
+    
+    x = np.arange(BOTTOM_LEFT_COORDINATES[0], BOTTOM_LEFT_COORDINATES[0] + rzc.shape[1])    
+    y = np.arange(BOTTOM_LEFT_COORDINATES[1] + rzc.shape[0] - 1, BOTTOM_LEFT_COORDINATES[1] - 1, -1)
+
+    # Here we define the pixel centroid coordinate
+    x = x + 0.5
+    y = y + 0.5
+    
     time = rzc_filename_to_time(input_path.as_posix().split("/")[-1])
     radar_availability = input_path.as_posix().split("/")[-1][12:14]
 

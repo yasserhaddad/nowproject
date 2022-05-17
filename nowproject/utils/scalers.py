@@ -188,7 +188,7 @@ class RainBinScaler:
         self.scaler_class = "RainBinScaler"
         self.bins = bins
         self.centres = centres
-        self.inverse_bins = np.vectorize(lambda x: centres[x], otypes=[float])
+        self.inverse_bins = np.vectorize(lambda x: centres[x] if x < len(centres) else centres[-1], otypes=[float])
 
     ##------------------------------------------------------------------------.
     def transform(self, new_data, variable_dim=None, rename_dict=None):
@@ -225,7 +225,7 @@ class RainBinScaler:
             var_dims = new_data[var].dims
 
             values = new_data[var].values
-            values = values.clip(max=self.bins[-1])
+            values = values.clip(max=(self.bins[-1] - 0.01))
             values = np.digitize(values, bins=self.bins)
 
             new_data[var] = (var_dims, values)
@@ -284,6 +284,7 @@ class RainBinScaler:
             var_dims = new_data[var].dims
 
             values = new_data[var].values
+            values = np.rint(values).astype(int)
             values = self.inverse_bins(values)
 
             new_data[var] = (var_dims, values)

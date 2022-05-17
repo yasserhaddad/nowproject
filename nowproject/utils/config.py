@@ -612,16 +612,16 @@ def create_event_time_range(event_dict, target_timezone="Europe/Zurich", freq="2
                          end=start_time + datetime.timedelta(hours=event_dict["duration"]), 
                          freq=freq).to_numpy().astype("M8[s]")
 
-def create_event_time_range_autoregressive(event_dict, input_k, target_timezone="Europe/Zurich", freq="2min30s"):
+def create_event_time_range_autoregressive(event_dict, nb_ar, target_timezone="Europe/Zurich", freq="2min30s"):
     regular_time_range = create_event_time_range(event_dict, target_timezone=target_timezone, freq=freq)
-    additional_time_range = pd.date_range(end=regular_time_range[0], periods=len(input_k), 
+    additional_time_range = pd.date_range(end=regular_time_range[0], periods=nb_ar + 1, 
                                           freq=freq, closed="left").to_numpy().astype("M8[s]")
     return np.concatenate([additional_time_range, regular_time_range])
 
-def create_test_events_autoregressive_time_range(fpath, input_k, freq="2min30s"):
+def create_test_events_autoregressive_time_range(fpath, nb_ar, freq="2min30s"):
     with open(fpath, "r", encoding="utf-8") as f:
         event_dicts = json.load(f)
-        return [create_event_time_range_autoregressive(d, input_k, freq=freq) for d in event_dicts]
+        return [create_event_time_range_autoregressive(d, nb_ar, freq=freq) for d in event_dicts]
 
 def create_test_events_time_range(fpath, freq="2min30s"):
     with open(fpath, "r", encoding="utf-8") as f:

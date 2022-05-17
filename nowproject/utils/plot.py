@@ -101,7 +101,7 @@ SKILL_YLIM_DICT = {
     "diffSD": (-1, 1),
 }
 
-def plot_map_cartopy(
+def _plot_map_cartopy(
     crs,
     extent,
     cartopy_scale="50m",
@@ -289,7 +289,7 @@ def plot_map(da: xr.DataArray, geodata: dict, title: str = None, ax=None, bbox=N
     )
 
     # ax = get_basemap_axis(extent, ax=ax, geodata=geodata, map_kwargs=map_kwargs)
-    ax = plot_map_cartopy(proj4_to_cartopy(geodata["projection"]), extent, ax=ax)
+    ax = _plot_map_cartopy(proj4_to_cartopy(geodata["projection"]), extent, ax=ax)
     
     cmap = plt.get_cmap("Reds") if not cmap_params else cmap_params.get("cmap", plt.get_cmap("Reds"))
     
@@ -429,7 +429,9 @@ def plot_averaged_skill(
     leadtimes = [str(l).split(" ")[0] for l in leadtimes.astype("timedelta64[m]")]
     # Create figure
     fig, axs = plt.subplots(1, len(variables), figsize=(15, 4))
-    for ax, var in zip(axs.flatten(), variables):
+    axs = [axs] if len(variables) < 2 else axs.flatten()    
+
+    for ax, var in zip(axs, variables):
         # Plot global average skill
         ax.plot(leadtimes, ds_averaged_skill[var].sel(skill=skill).values)
         ##------------------------------------------------------------------.

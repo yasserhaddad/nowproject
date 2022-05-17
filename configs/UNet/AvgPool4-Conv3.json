@@ -26,7 +26,7 @@
         "autotune_num_workers": false
     },
     "training_settings": {
-        "epochs": 2,
+        "epochs": 5,
         "ar_training_strategy": "RNN",
         "learning_rate": 0.007,
         "training_batch_size": 16,

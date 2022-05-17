@@ -40,16 +40,17 @@ from nowproject.utils.config import (
 from xverif import xverif
 
 # Project specific functions
+from nowproject.data.data_utils import prepare_data_dynamic
 import nowproject.architectures as dl_architectures
 from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
-from nowproject.utils.scalers import RainScaler
+from nowproject.utils.scalers import RainBinScaler, RainScaler
+from nowproject.utils.plot import plot_averaged_skill, plot_averaged_skills, plot_skills_distribution
+
+model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling/")
 
 # %load_ext autoreload
 # %autoreload 2
-
-
-model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling/")
 
 
 # zarr_dir_path = Path("/ltenas3/0_Data/NowProject/zarr/")
@@ -62,34 +63,26 @@ model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling/")
 
 data_dir_path = Path("/ltenas3/0_Data/NowProject/")
 
-data_dynamic = xr.open_zarr(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
-data_dynamic = data_dynamic.reset_coords(
-    ["radar_names", "radar_quality", "radar_availability"], 
-    drop=True
-    )
-data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
-# data_dynamic = data_dynamic.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
-data_dynamic = data_dynamic.sel(
-    {"y": list(range(835, 470, -1)), 
-    "x": list(range(60, 300))}
-    )
-data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
+data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
 
 test = data_dynamic.isel(time=slice(0, 100))
 scaler = RainScaler(feature_min=np.log10(0.025), feature_max=np.log10(100), threshold=np.log10(0.1))
 
 
-test_bins = data_dynamic.isel(time=slice(0, 100)).copy()
+test_bins = data_dynamic.isel(time=slice(1300, 1800)).copy()
 np_bins = np.ones(test_bins.feature.shape)
+
 np_bins[:10, 150:250, 200:300] = 3
 np_bins[20:30, 150:250, 200:300] = 9
 np_bins[40:60, 150:250, 200:300] = 14
+np_bins[80:90, 150:250, 200:300] = np.nan
+np_bins[90:100, 150:250, 200:300] = 500
+test_bins["feature"] = (test_bins.feature.dims, np_bins)
 
-bins = [0.01, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 200.0]
+bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
 # bins = np.logspace(start=np.log10(0.001), stop=np.log10(200), num=10)
 centres = [0] + [(bins[i] + bins[i+1])/2 for i in range(0, len(bins)-1)] + [np.nan]
-
-
+scaler = RainBinScaler(bins, centres)
 
 test_transformed = scaler.transform(test, variable_dim="feature")
 test_untransformed = scaler.inverse_transform(test_transformed, variable_dim="feature")
@@ -125,6 +118,13 @@ verification_zarr_fpath = (
     model_dir / "model_predictions" / "space_chunked" / "test_forecasts_2.zarr"
 ).as_posix()
 
+rechunked_zarr_fpath = (
+    model_dir / "model_predictions" / "space_chunked" / "rechunked_store.zarr"
+)
+
+ds_rechunked = xr.open_zarr(rechunked_zarr_fpath, chunks="auto")
+
+
 ds_forecasts = ds_forecasts.drop_dims("time")
 
 # Check the chunk size of coords. If chunk size > coord shape, chunk size = coord shape.
@@ -156,6 +156,10 @@ ds_verification_format = xr.open_zarr(verification_zarr_fpath).load()
 
 selection = data_dynamic.sel(time=ds_verification_format.time).load()
 
+
+####################################################
+# Skills
+
 ds_skill = xverif.deterministic(
         pred=ds_verification_format.chunk({"x": 1, "y": 1}),
         obs=selection.chunk({"x": 1, "y": 1}),
@@ -168,3 +172,14 @@ ds_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc
 ds_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_spatial_skill.nc")
 
 ds_averaged_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_global_skill.nc")
+
+plot_averaged_skill(ds_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "RMSE_skill.png"
+    )
+
+plot_averaged_skills(ds_averaged_skill, variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "averaged_skill.png"
+    )
+plot_skills_distribution(ds_skill, variables=["feature"]).savefig(
+    model_dir / "figs" / "skills" / "skills_distribution.png",
+)

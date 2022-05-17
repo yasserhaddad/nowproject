@@ -80,9 +80,12 @@ class UNet(UNetModel, torch.nn.Module):
         # Architecture options
         skip_connection: str = "stack",
         increment_learning: bool = False,
+        # Output options
+        # categorical: bool = False
     ):
         ##--------------------------------------------------------------------.
         super().__init__()
+        # self.categorical = categorical
         ##--------------------------------------------------------------------.
         # Retrieve tensor informations
         self.dim_names = tensor_info["dim_order"]["dynamic"]
@@ -244,6 +247,8 @@ class UNet(UNetModel, torch.nn.Module):
             .align_to(*self.dim_names)
             .rename(None)
         )  # x.permute(0, 2, 1, 3)
+        # if self.categorical:
+        #     x = torch.round(x)
         return x
 
 ####--------------------------------------------------------------------------.
