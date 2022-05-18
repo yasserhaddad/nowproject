@@ -130,3 +130,5 @@ dmypy.json
 
 # Dask folders
 dask-worker-space/
+
+.vscode/

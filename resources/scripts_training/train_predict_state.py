@@ -20,7 +20,7 @@ import cartopy.crs as ccrs
 from torch import optim
 from torchinfo import summary
 
-import xverif
+from xverif import xverif
 from xscaler import LoadScaler, SequentialScaler, LoadAnomaly
 from xforecasting.utils.io import get_ar_model_tensor_info
 from xforecasting.utils.torch import summarize_model
