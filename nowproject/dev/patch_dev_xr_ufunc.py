@@ -21,8 +21,11 @@ from nowproject.dev.utils_patches import (
     patch_stats_fun
 )
  
+# Set parallel settings 
+# - LTESRV1: 24 max
+# - LTESRV7: 32 max 
 from dask.distributed import Client, progress
-client = Client(n_workers=4)
+client = Client(n_workers=22) # process=False fails ! 
 
 zarr_dir_path = pathlib.Path("/ltenas3/0_Data/NowProject/zarr/")
 ds = xr.open_zarr(zarr_dir_path / "rzc_temporal_chunk.zarr")
@@ -127,7 +130,10 @@ df_all = pd.concat(list_df, ignore_index=True)
  
 t_f = time.time()   
 t_elapsed = t_f - t_i 
-print("Total:", t_elapsed)
+print("Total:", t_elapsed)  
+
+# 59 sec with processes=True
+# xxx sec with processes=False
 
 np.unique(df_all[df_all['Patch Area'] == 16128]['time'])
  
