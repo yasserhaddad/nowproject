@@ -5,7 +5,7 @@ import numpy as np
 from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES
 
 
-def prepare_data_dynamic(data_dynamic_path: pathlib.Path):
+def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = None):
     data_dynamic = xr.open_zarr(data_dynamic_path)
     rzc_shape = data_dynamic.isel(time=0).precip.data.shape
     x = np.arange(BOTTOM_LEFT_COORDINATES[0], BOTTOM_LEFT_COORDINATES[0] + rzc_shape[1]) + 0.5
@@ -16,12 +16,11 @@ def prepare_data_dynamic(data_dynamic_path: pathlib.Path):
         drop=True
         )
     data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
-    data_dynamic = data_dynamic.sel({
-        "x": slice(485, 831), 
-        "y": slice(301, 75)
-    })
+    if boundaries:
+        data_dynamic = data_dynamic.sel(boundaries)
+    
     data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
-
+    data_dynamic = data_dynamic.where(data_dynamic > 0.04, 0.0)
     return data_dynamic
 
 

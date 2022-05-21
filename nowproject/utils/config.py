@@ -519,10 +519,11 @@ def get_model_name(cfg):
     return model_name
 
 
-def create_experiment_directories(exp_dir, model_name, force=False):
+def create_experiment_directories(exp_dir, model_name, suffix="", force=False):
     """Create the required directory for a specific NowProject model."""
     # Check if the experiment directory already exists
-    exp_dir = exp_dir / model_name
+    dir_name = f"{model_name}-{suffix}" if suffix != "" else model_name
+    exp_dir = exp_dir / dir_name
     if exp_dir.exists():
         if force:
             shutil.rmtree(exp_dir)

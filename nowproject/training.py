@@ -43,6 +43,7 @@ def AutoregressiveTraining(
     # Loss settings
     criterion,
     reshape_tensors_4_loss,
+    channels_first,
     ar_scheduler,
     early_stopping,
     optimizer,
@@ -385,6 +386,7 @@ def AutoregressiveTraining(
                         Y_pred=dict_training_Y_predicted[ar_iteration],
                         Y_obs=torch_Y,
                         dim_info_dynamic=dim_info_dynamic,
+                        channels_first=channels_first
                     )
                     dict_training_loss_per_ar_iteration[ar_iteration] = criterion(
                         Y_obs, Y_pred
@@ -555,6 +557,7 @@ def AutoregressiveTraining(
                                     Y_pred=dict_validation_Y_predicted[ar_iteration],
                                     Y_obs=torch_Y,
                                     dim_info_dynamic=dim_info_dynamic,
+                                    channels_first=channels_first
                                 )
                                 dict_validation_loss_per_ar_iteration[ar_iteration] = criterion(Y_obs, Y_pred)
 

@@ -16,6 +16,9 @@ from cartopy.mpl.geoaxes import GeoAxesSubplot
 from xarray.plot.utils import _add_colorbar, label_from_attrs
 from pysteps.visualization.utils import get_geogrid, get_basemap_axis, proj4_to_cartopy
 
+# import seaborn as sns
+# sns.set_theme()
+
 SKILL_CMAP_DICT = {
     "error_CoV": plt.get_cmap("RdYlBu"),
     "obs_CoV": plt.get_cmap("YlOrRd"),
@@ -91,14 +94,27 @@ SKILL_YLIM_DICT = {
     "RMSE": (0, 8),
     "rSD": (0.6, 1.4),
     "pearson_R2": (0, 1),
-    "KGE": (0, 1),
-    "NSE": (0, 1),
+    "KGE": (-1.1, 1.1),
+    "NSE": (-0.1, 1.1),
     "relBIAS": (-0.01, 0.01),
     "percBIAS": (-2.5, 2.5),
     "percMAE": (0, 2.5),
     "error_CoV": (-40, 40),
     "MAE": (0.5, 2.5),
-    "diffSD": (-1, 1),
+    "diffSD": (-1.1, 1.1),
+    "SSIM": (-1.1, 1.1),
+    "POD": (-0.1, 1.1),
+    "FAR": (-0.1, 1.1),
+    "FA": (-0.1, 1.1),
+    "ACC": (-0.1, 1.1),
+    "CSI": (-0.1, 1.1),
+    "FB": (-4, 4),
+    "HSS": (-1.1, 1.1),
+    "HK": (-0.1, 1.1),
+    "GSS": (-0.1, 1.1),
+    "SEDI": (-0.1, 1.1),
+    "MCC": (-0.1, 1.1),
+    "F1": (-0.1, 1.1)
 }
 
 def _plot_map_cartopy(
@@ -331,6 +347,83 @@ def plot_map(da: xr.DataArray, geodata: dict, title: str = None, ax=None, bbox=N
     return ax
 
 
+def plot_comparison_maps(ds: xr.Dataset, 
+                         figs_dir: pathlib.Path,
+                         geodata: dict = None,
+                         bbox: Tuple[int] = None,
+                         variables: List[str] = ["feature"],
+                         suffix: str = "",
+                         prefix: str = ""
+                        ):
+    figs_dir.mkdir(exist_ok=True)
+    models = ds.models.values
+    ##------------------------------------------------------------------------.
+    # Create a figure for each leadtime
+    for i, leadtime in enumerate(ds.leadtime.values):
+        ds = ds.sel(leadtime=leadtime)
+        ##--------------------------------------------------------------------.
+        # Define super title
+        suptitle = "Lead time: {}".format(str(leadtime.astype("timedelta64[m]")))
+        ##--------------------------------------------------------------------.
+        # Create figure
+        fig, axs = plt.subplots(
+            len(models),
+            len(variables),
+            figsize=(15, 20),
+            subplot_kw={'projection': proj4_to_cartopy(METADATA["projection"])}
+        )
+        ##--------------------------------------------------------------------.
+        # Add supertitle
+        fig.suptitle(suptitle, fontsize=26, y=1.05, x=0.6)
+        ##--------------------------------------------------------------------.
+        # Set the variable title
+        for ax, var in zip(axs, variables):
+            ax.set_title(var.upper(), fontsize=24, y=1.08)
+        
+        ##--------------------------------------------------------------------.
+        # Display skill maps
+        ax_count = 0
+        axs = axs.flatten()
+        for model in models:
+            for var in variables:
+                cbar_params = { 
+                    "shrink": 0.7, 
+                    "extend": "neither",
+                    "label": model
+                }
+                cmap_params = {"cmap": "RdYlBu"}
+                ax = plot_map(ds[var].sel(model=model), 
+                              ax=axs[ax_count], 
+                              geodata=geodata, 
+                              title=None, 
+                              cbar_params=cbar_params,
+                              cmap_params=cmap_params, 
+                              bbox=bbox,
+                              vmin=0,
+                              vmax=200)
+
+                axs[ax_count].outline_patch.set_linewidth(2)
+                ax_count += 1
+    
+    ##--------------------------------------------------------------------.
+    # Figure tight layout
+    fig.tight_layout()
+    # ##--------------------------------------------------------------------.
+    # # Define figure filename
+    # if prefix != "":
+    #     prefix = prefix + "_"
+    # if suffix != "":
+    #     suffix = "_" + suffix
+    # leadtime_str = "{:02d}".format((int(leadtime / np.timedelta64(1, "m"))))
+    # fname = "comparison_" + prefix + "L" + leadtime_str + suffix + ".png"
+    # ##--------------------------------------------------------------------.
+    # # Save figure
+    # fig.savefig((figs_dir / fname), bbox_inches="tight")
+    # ##--------------------------------------------------------------------.
+
+    return fig
+
+
 def plot_skill_maps(
     ds_skill: xr.Dataset,
     figs_dir: pathlib.Path,
@@ -549,6 +642,7 @@ def plot_skills_distribution(
                 ds_skill[var].sel(skill=skill).values[i, :].reshape(-1)
                 for i in range(len(ds_skill[var].sel(skill=skill).values))
             ]
+            tmp_boxes = [d[~np.isnan(d)] for d in tmp_boxes]
             axs[ax_i].boxplot(tmp_boxes, showfliers=False)
             ##------------------------------------------------------------------.
             # Add best skill line
@@ -566,7 +660,7 @@ def plot_skills_distribution(
                 axs[ax_i].axhline(y=1, linestyle="solid", color="gray")
             ##------------------------------------------------------------------.
             # Add labels
-            axs[ax_i].set_ylim(SKILL_YLIM_DICT.get(skill, (None, None)))
+            # axs[ax_i].set_ylim(SKILL_YLIM_DICT.get(skill, (None, None)))
             axs[ax_i].set_xlabel("Leadtime (min)")
             axs[ax_i].set_ylabel(skill)
             axs[ax_i].set_xticklabels(leadtimes)

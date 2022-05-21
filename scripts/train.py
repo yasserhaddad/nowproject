@@ -43,7 +43,7 @@ from xverif import xverif
 # Project specific functions
 from torch import nn
 import nowproject.architectures as dl_architectures
-from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
+from nowproject.loss import FSSLoss, WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
 from nowproject.utils.plot import (
     plot_skill_maps, 
@@ -71,20 +71,22 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
-    data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+    boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
+    data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
+                                        boundaries=boundaries)
     data_static = load_static_topo_data(static_data_path, data_dynamic)
     data_bc = None
 
     ##------------------------------------------------------------------------.
     # Load scalers
-    # scaler = RainScaler(feature_min=np.log10(0.025), 
-    #                     feature_max=np.log10(150), 
-    #                     threshold=np.log10(0.1))
+    scaler = RainScaler(feature_min=np.log10(0.025), 
+                        feature_max=np.log10(150), 
+                        threshold=np.log10(0.1))
     
-    bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
+    # bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
 
-    centres = [0] + [(bins[i] + bins[i+1])/2 for i in range(0, len(bins)-1)] + [np.nan]
-    scaler = RainBinScaler(bins, centres)
+    # centres = [0] + [(bins[i] + bins[i+1])/2 for i in range(0, len(bins)-1)] + [np.nan]
+    # scaler = RainBinScaler(bins, centres)
 
 
     ##------------------------------------------------------------------------.
@@ -92,9 +94,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ## - Defining time split for training
     # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-10-01T00:00", "2018-11-30T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
-    test_events = create_test_events_time_range(test_events_path)
+    training_years = np.array(["2018-10-01T00:00", "2018-10-31T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
+    test_events = create_test_events_time_range(test_events_path)[:1]
 
     # - Split data sets
     t_i = time.time()
@@ -173,7 +175,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         cfg["model_settings"]["model_name_suffix"] = None
 
     model_dir = create_experiment_directories(
-        exp_dir=exp_dir_path, model_name=model_name, force=force
+        exp_dir=exp_dir_path, model_name=model_name, suffix="LogNormalizeScaler-MaskedLoss", force=force
     )  # force=True will delete existing directory
 
     # Define model weights filepath
@@ -187,7 +189,8 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define custom loss function
     # --> TODO: For masking we could simply set weights to 0 !!!
     # criterion = WeightedMSELoss(weights=weights)
-    criterion = WeightedMSELoss()
+    criterion = WeightedMSELoss(reduction="mean_masked")
+    # criterion = FSSLoss(mask_size=5)
 
     ##------------------------------------------------------------------------.
     # - Define optimizer
@@ -256,6 +259,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         # Loss settings
         criterion=criterion,
         reshape_tensors_4_loss=reshape_tensors_4_loss,
+        channels_first=False,
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         ar_scheduler=ar_scheduler,
@@ -387,23 +391,34 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     print("- Run deterministic verification")
     # dask.config.set(scheduler='processes')
     # - Compute skills
-    ds_skill = xverif.deterministic(
-        pred=ds_verification_format.stack(sample=("x", "y")),
-        obs=data_dynamic.sel(time=ds_verification_format.time).stack(sample=("x", "y")),
+    ds_det_cont_skill = xverif.deterministic(
+        pred=ds_verification_format.chunk({"time": -1}),
+        obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
         forecast_type="continuous",
         aggregating_dim="time",
     )
     # - Save sptial skills
-    ds_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc"))
+    ds_det_cont_skill.to_netcdf((model_dir / "model_skills" / "deterministic_continuous_spatial_skill.nc"))
+
+    ds_det_cat_skill = xverif.deterministic(
+        pred=ds_verification_format.chunk({"time": -1}),
+        obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
+        forecast_type="categorical",
+        aggregating_dim="time",
+    )
+    # - Save sptial skills
+    ds_det_cat_skill.to_netcdf((model_dir / "model_skills" / "deterministic_categorical_spatial_skill.nc"))
 
     ##------------------------------------------------------------------------.
     ### - Create verification summary plots and maps
     print("========================================================================================")
     print("- Create verification summary plots and maps")
-    ds_averaged_skill = ds_skill.mean(dim=["sample"])
-    
+    ds_cont_averaged_skill = ds_det_cont_skill.mean(dim=["y", "x"])
+    ds_cat_averaged_skill = ds_det_cat_skill.mean(dim=["y", "x"])
     # - Save averaged skills
-    ds_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_global_skill.nc")
+    ds_cont_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_continuous_global_skill.nc")
+    ds_cat_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_categorical_global_skill.nc")
+
 
     # # bbox = (451000, 30000, 850000, 319000)
     # bbox = (470000, 60000, 835000, 300000)
@@ -420,13 +435,13 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # )
 
     # - Create skill vs. leadtime plots
-    plot_averaged_skill(ds_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
+    plot_averaged_skill(ds_cont_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "RMSE_skill.png"
     )
-    plot_averaged_skills(ds_averaged_skill, variables=["feature"]).savefig(
-        model_dir / "figs" / "skills" / "averaged_skill.png"
+    plot_averaged_skills(ds_cont_averaged_skill, variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "averaged_continuous_skill.png"
     )
-    plot_skills_distribution(ds_skill, variables=["feature"]).savefig(
+    plot_skills_distribution(ds_det_cont_skill, variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "skills_distribution.png",
     )
 

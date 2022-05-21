@@ -47,7 +47,7 @@ from nowproject.training import AutoregressiveTraining
 from nowproject.utils.scalers import RainBinScaler, RainScaler
 from nowproject.utils.plot import plot_averaged_skill, plot_averaged_skills, plot_skills_distribution
 
-model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling/")
+model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling-LogNormalizeScaler-MaskedLoss/")
 
 # %load_ext autoreload
 # %autoreload 2
@@ -63,7 +63,9 @@ model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling/")
 
 data_dir_path = Path("/ltenas3/0_Data/NowProject/")
 
-data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
+data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr",
+                                    boundaries=boundaries)
 
 test = data_dynamic.isel(time=slice(0, 100))
 scaler = RainScaler(feature_min=np.log10(0.025), feature_max=np.log10(100), threshold=np.log10(0.1))
@@ -152,14 +154,13 @@ verification_zarr_fpath = (
 ).as_posix()
 
 
-ds_verification_format = xr.open_zarr(verification_zarr_fpath).load()
+ds_verification_format = xr.open_zarr(verification_zarr_fpath)
 
 selection = data_dynamic.sel(time=ds_verification_format.time).load()
 
 
 ####################################################
 # Skills
-
 ds_skill = xverif.deterministic(
         pred=ds_verification_format.chunk({"x": 1, "y": 1}),
         obs=selection.chunk({"x": 1, "y": 1}),
@@ -169,17 +170,23 @@ ds_skill = xverif.deterministic(
 
 ds_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc"))
 
-ds_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_spatial_skill.nc")
+ds_det_cont_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_continuous_spatial_skill.nc")
+ds_det_cat_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_categorical_spatial_skill.nc")
 
-ds_averaged_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_global_skill.nc")
+ds_cont_averaged_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_continuous_global_skill.nc")
+ds_cat_averaged_skill = xr.open_dataset(model_dir / "model_skills" / "deterministic_categorical_global_skill.nc")
 
-plot_averaged_skill(ds_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
+plot_averaged_skill(ds_cont_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "RMSE_skill.png"
     )
+plot_averaged_skills(ds_cont_averaged_skill, variables=["feature"]).savefig(
+    model_dir / "figs" / "skills" / "averaged_continuous_skills.png"
+)
+plot_averaged_skills(ds_cat_averaged_skill, 
+                     skills=["POD", "FAR", "FA", "ACC", "CSI", "F1"], variables=["feature"]).savefig(
+     model_dir / "figs" / "skills" / "averaged_categorical_skills.png"
+)
 
-plot_averaged_skills(ds_averaged_skill, variables=["feature"]).savefig(
-        model_dir / "figs" / "skills" / "averaged_skill.png"
-    )
-plot_skills_distribution(ds_skill, variables=["feature"]).savefig(
+plot_skills_distribution(ds_det_cont_skill, variables=["feature"]).savefig(
     model_dir / "figs" / "skills" / "skills_distribution.png",
 )
