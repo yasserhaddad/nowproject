@@ -22,15 +22,17 @@ from nowproject.dev.utils_patches import (
     xr_get_areas_labels,
     get_slice_size,
 )
-
+from nowproject.data.data_utils import prepare_data_dynamic
 
 zarr_dir_path = pathlib.Path("/ltenas3/0_Data/NowProject/zarr/")
-ds = xr.open_zarr(zarr_dir_path / "rzc_temporal_chunk.zarr")
- 
+# ds = xr.open_zarr(zarr_dir_path / "rzc_temporal_chunk.zarr")
+boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
+ds = prepare_data_dynamic(zarr_dir_path / "rzc_temporal_chunk.zarr",
+                          boundaries=boundaries)
 # ds_masked = ds.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
 
 # DEV 
-data_array = ds['precip'].sel(time="2016-01-01T00:00:00")
+data_array = ds['feature'].sel(time="2016-01-01T00:00:00")
 # data_array = ds['precip'].isel(time=0)
  
 # Plot
@@ -107,7 +109,7 @@ list_patch_upper_left_idx
 fig, ax = plt.subplots(1, 1, figsize=(9, 6))
 ax.imshow(intensity, cmap=cmap, vmin=0.1)
 for y, x in list_patch_upper_left_idx:
-    rect = plt.Rectangle((x, y), patch_size, patch_size, linewidth=1, edgecolor='r', facecolor='none')
+    rect = plt.Rectangle((x, y), patch_size[0], patch_size[0], linewidth=1, edgecolor='r', facecolor='none')
     ax.add_patch(rect)
 ax.set_axis_off()
 plt.show()

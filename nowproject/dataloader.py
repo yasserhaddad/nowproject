@@ -62,7 +62,9 @@ from xforecasting.dataloader_autoregressive import (
 )
 
 def convert_str_patch_idx_to_int(patches_idx):
-    return [(int(idx[0]), int(idx[1])) for idx in [i.split("-")for i in patches_idx.split(",")]] 
+    if patches_idx == "":
+        return []
+    return [(int(idx[0]), int(idx[1])) for idx in [i.split("-")for i in patches_idx.split(", ")]] 
 
 # -----------------------------------------------------------------------------.
 # #############################
@@ -316,8 +318,8 @@ class AutoregressivePatchLearningDataset(Dataset):
                 data_static = data_static.compute()
 
             # - Apply scaler
-            if self.scaler is not None:
-                data_static = self.scaler.transform(data_static, variable_dim="feature")
+            # if self.scaler is not None:
+            #     data_static = self.scaler.transform(data_static, variable_dim="feature")
             ## -------------------------------------------------------------------.
             # - Reshape data_static to match ('node','feature') order of data_dynamic
             dims_dynamic = dim_order["dynamic"][
@@ -624,12 +626,16 @@ class AutoregressivePatchLearningDataset(Dataset):
 
         ## -------------------------------------------------------------------.
         if self.data_availability["patches"]:
-            patches = convert_str_patch_idx_to_int(self.data_patches.values[xr_idx_k_0])
+            patches = list(set(convert_str_patch_idx_to_int(self.data_patches.values[xr_idx_k_0])))
             patch_size = self.data_patches.attrs["patch_size"]
-            (x0, y0) = patches[np.random.choice(range(len(patches)))]
+            if len(patches) > 0:
+                (y0, x0) = patches[np.random.choice(range(len(patches)))]
+            else:
+                (y0, x0) = random.randrange(0, len(self.data_dynamic.y) - 128), \
+                            random.randrange(0, len(self.data_dynamic.x) - 128)
 
             da_dynamic_subset = da_dynamic_subset.isel(y=slice(y0, y0+patch_size), 
-                                                    x=slice(x0, x0+patch_size))
+                                                       x=slice(x0, x0+patch_size))
                 
         ## -------------------------------------------------------------------.
         ### Loop over leadtimes and store Numpy arrays in a dictionary(leadtime)
@@ -709,6 +715,9 @@ class AutoregressivePatchLearningDataset(Dataset):
             xr_idx_bc_required = xr_idx_k_0 + self.rel_idx_bc_required
             # - Subset the xarray Datarray (need for all autoregressive iterations)
             data_bc_subset = self.data_bc.isel(time=xr_idx_bc_required)
+            if self.data_availability["patches"]:
+                data_bc_subset = data_bc_subset.isel(y=slice(y0, y0+patch_size), 
+                                                     x=slice(x0, x0+patch_size))
             # - Ensure that here after is a xr.DataArray
             if isinstance(data_bc_subset, xr.Dataset):
                 da_bc_subset = data_bc_subset.to_array(dim="feature").transpose(
@@ -769,13 +778,12 @@ class AutoregressivePatchLearningDataset(Dataset):
             "forecast_time_info": forecast_time_info,
             "training_mode": self.training_mode,
             "data_availability": self.data_availability,
+            "patch": (x0, y0, x0+patch_size, y0+patch_size) if self.data_availability["patches"] else None
         }
 
 
 ##----------------------------------------------------------------------------.
-
-
-def autoregressive_collate_fn(
+def autoregressive_patch_collate_fn(
     list_samples,
     torch_static=None,
     pin_memory=False,
@@ -808,7 +816,7 @@ def autoregressive_collate_fn(
     list_X_dynamic_samples = []
     list_X_bc_samples = []
     list_Y_samples = []
-
+    list_patches = []
     list_forecast_start_time = []
     list_forecast_reference_time = []
     dict_forecast_leadtime = list_samples[0]["forecast_time_info"][
@@ -821,6 +829,7 @@ def autoregressive_collate_fn(
         list_X_dynamic_samples.append(dict_samples["X_dynamic"])
         list_X_bc_samples.append(dict_samples["X_bc"])
         list_Y_samples.append(dict_samples["Y"])
+        list_patches.append(dict_samples["patch"])
         # Forecast time info
         list_forecast_start_time.append(
             dict_samples["forecast_time_info"]["forecast_start_time"]
@@ -828,7 +837,7 @@ def autoregressive_collate_fn(
         list_forecast_reference_time.append(
             dict_samples["forecast_time_info"]["forecast_reference_time"]
         )
-
+    
     ##------------------------------------------------------------------------.
     # Assemble forecast_time_info
     forecast_reference_time = np.stack(list_forecast_reference_time)
@@ -915,6 +924,10 @@ def autoregressive_collate_fn(
         dict_X_bc_batched = None
     ##------------------------------------------------------------------------.
     # - Prefetch static to GPU if asked
+    if torch_static is not None and data_availability["patches"]:
+        torch_static = torch.stack(
+            [torch_static[i, :, y0:y1, x0:x1, :] for i, (x0, y0, x1, y1) in enumerate(list_patches)]
+        )
     if prefetch_in_gpu:
         if torch_static is not None:
             torch_static = torch_static.to(
@@ -941,3 +954,127 @@ def autoregressive_collate_fn(
     }
 
     return batch_dict
+
+
+def AutoregressivePatchLearningDataLoader(
+    dataset,
+    batch_size=64,
+    drop_last_batch=True,
+    shuffle=True,
+    shuffle_seed=69,
+    num_workers=0,
+    pin_memory=False,
+    prefetch_in_gpu=False,
+    prefetch_factor=2,
+    asyncronous_gpu_transfer=True,
+    device="cpu",
+    verbose=False,
+):
+    """
+    Create the DataLoader required for autoregressive model training.
+
+    Parameters
+    ----------
+    dataset : AutoregressiveDataset
+        An AutoregressiveDataset.
+    batch_size : int, optional
+        Number of samples within a batch. The default is 64.
+    drop_last_batch : bool, optional
+        Wheter to drop the last batch_size (with less samples). The default is True.
+    shuffle : bool, optional
+        Wheter to random shuffle the samples each epoch. The default is True.
+    shuffle_seed : int, optional
+        Empower deterministic random shuffling.
+    num_workers : 0, optional
+        Number of processes that generate batches in parallel.
+        0 means ONLY the main process will load batches (that can be a bottleneck).
+        1 means ONLY one worker (just not the main process) will load data
+        A high enough number of workers usually assures that CPU computations
+        are efficiently managed. However, increasing num_workers increase the
+        CPU memory consumption.
+        The Dataloader prefetch into the CPU prefetch_factor*num_workers batches.
+        The default is 0.
+    prefetch_factor: int, optional
+        Number of sample loaded in advance by each worker.
+        The default is 2.
+    prefetch_in_gpu: bool, optional
+        Whether to prefetch 'prefetch_factor'*'num_workers' batches of data into GPU instead of CPU.
+        By default it prech 'prefetch_factor'*'num_workers' batches of data into CPU (when False)
+        The default is False.
+    pin_memory : bool, optional
+        When True, it prefetch the batch data into the pinned memory.
+        pin_memory=True enables (asynchronous) fast data transfer to CUDA-enabled GPUs.
+        Useful only if training on GPU.
+        The default is False.
+    asyncronous_gpu_transfer: bool, optional
+        Only used if 'prefetch_in_gpu' = True.
+        Indicates whether to transfer data into GPU asynchronously
+    device: torch.device, optional
+         Only used if 'prefetch_in_gpu' = True.
+         Indicates to which GPUs to transfer the data.
+
+    Returns
+    -------
+    dataloader : AutoregressiveDataLoader
+        pytorch DataLoader for autoregressive model training.
+
+    """
+    ##------------------------------------------------------------------------.
+    ## Checks
+    device = check_device(device)
+    pin_memory = check_pin_memory(
+        pin_memory=pin_memory, num_workers=num_workers, device=device
+    )
+    asyncronous_gpu_transfer = check_asyncronous_gpu_transfer(
+        asyncronous_gpu_transfer=asyncronous_gpu_transfer, device=device
+    )
+    prefetch_in_gpu = check_prefetch_in_gpu(
+        prefetch_in_gpu=prefetch_in_gpu, num_workers=num_workers, device=device
+    )
+    prefetch_factor = check_prefetch_factor(
+        prefetch_factor=prefetch_factor, num_workers=num_workers
+    )
+    device = check_device(device)
+
+    ##------------------------------------------------------------------------.
+    # Retrieve static feature tensor (preloaded in GPU) (if available)
+    torch_static = dataset.torch_static
+
+    ##------------------------------------------------------------------------.
+    # Expand static feature tensor (along the batch dimension)
+    if torch_static is not None:
+        dim_info = dataset.dim_info["static"]
+        batch_dim = dim_info["sample"]
+        new_dim_size = [-1 for i in range(torch_static.dim())]
+        new_dim_size[batch_dim] = batch_size
+        torch_static = torch_static.expand(new_dim_size)
+
+    ##------------------------------------------------------------------------.
+    # Set seeds for deterministic random shuffling
+    if shuffle:
+        set_seeds(shuffle_seed)  # update np.seed, random.seed and torch.seed
+    ##------------------------------------------------------------------------.
+    # Create pytorch Dataloader
+    # - Pass torch tensor of static data (to not reload every time)
+    # - Data are eventually pinned into memory after data have been stacked into the collate_fn
+    dataloader = DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        # sampler = None,  # Option not implemented yet
+        drop_last=drop_last_batch,
+        num_workers=num_workers,
+        persistent_workers=False,
+        prefetch_factor=prefetch_factor,
+        pin_memory=False,
+        worker_init_fn=worker_init_fn,
+        collate_fn=partial(
+            autoregressive_patch_collate_fn,
+            torch_static=torch_static,
+            pin_memory=pin_memory,
+            prefetch_in_gpu=prefetch_in_gpu,
+            asyncronous_gpu_transfer=asyncronous_gpu_transfer,
+            device=device,
+        ),
+    )
+    return dataloader

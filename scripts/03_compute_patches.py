@@ -23,54 +23,12 @@ from nowproject.dev.utils_patches import (
 
 from skimage.morphology import square
 from nowproject.data.data_utils import prepare_data_dynamic
+from nowproject.data.patches_utils import get_patch_info
  
 # Set parallel settings 
 # - LTESRV1: 24 max
 # - LTESRV7: 32 max 
 from dask.distributed import Client, progress, LocalCluster
-
-#-----------------------------------------------------------------------------.
-# Define patch info extraction 
-def get_patch_info(arr,
-                   min_intensity_threshold=-np.inf, 
-                   max_intensity_threshold= np.inf, 
-                   min_area_threshold=1, 
-                   max_area_threshold=np.inf,
-                   footprint_buffer=None,
-                   patch_size: tuple = (128, 128), 
-                   centered_on = "center_of_mass",  
-                   mask_value = 0, 
-                   patch_stats_fun = None, 
-                  ):
-     # Label area 
-     labels, n_labels, counts = get_areas_labels(arr,  
-                                                 min_intensity_threshold=min_intensity_threshold, 
-                                                 max_intensity_threshold=max_intensity_threshold, 
-                                                 min_area_threshold=min_area_threshold, 
-                                                 max_area_threshold=max_area_threshold, 
-                                                 footprint_buffer=footprint_buffer) 
-     if n_labels > 0:
-         # Get patches 
-         list_patch_slices, patch_statistics = get_patch_per_label(labels=labels, 
-                                                                   intensity=arr,
-                                                                   patch_size=patch_size, 
-                                                                   centered_on=centered_on,
-                                                                   patch_stats_fun=patch_stats_fun, 
-                                                                  )
-         # Found upper left index
-         list_patch_upper_left_idx = [[slc.start for slc in list_slc] for list_slc in list_patch_slices]
-         upper_left_str = [str(row) + "-" + str(col) for row, col in list_patch_upper_left_idx]
-         
-         # Define data.frame 
-         df = pd.DataFrame(patch_statistics) 
-         df['upper_left_idx'] = upper_left_str
-     else: 
-         df = pd.DataFrame()
-     
-     # Hack to return df
-     out_str = df.to_json()
-     return np.array([out_str], dtype="object")
-
 
 if __name__ == '__main__':
     client = Client(n_workers=22) # process=False fails ! 
@@ -96,8 +54,7 @@ if __name__ == '__main__':
     mask_value = 0
  
     # -----------------------------------------------------.
-    # Compute for all patches 
-                        
+    # Compute for all patches    
     t_i = time.time()
     data_array = ds['feature']
     kwargs = {
@@ -126,7 +83,7 @@ if __name__ == '__main__':
     list_df = []
     for i in range(len(a.data)):
         df_json_str = a.data[i][0]
-        timestep = a['time'].data[0]
+        timestep = a['time'].data[i]
         if df_json_str != '{}':
             df = pd.read_json(df_json_str)
             df["time"] = timestep
@@ -134,15 +91,8 @@ if __name__ == '__main__':
 
     df_all = pd.concat(list_df, ignore_index=True)
     df_all.to_parquet(data_dir_path / "rzc_cropped_patches.parquet")
-    
-    # # np.unique(df_all['Patch Area'])
-    # # np.unique(df_all['Patch Area'], return_counts=True)
-    
-    # t_f = time.time()   
-    # t_elapsed = t_f - t_i 
-    # print("Total:", t_elapsed)  
 
-    # # 59 sec with processes=True
-    # # xxx sec with processes=False
+    # df_indices = df_all.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x))
 
-    # # np.unique(df_all[df_all['Patch Area'] == 16128]['time'])
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
