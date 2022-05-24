@@ -65,6 +65,7 @@ class UNet(UNetModel, torch.nn.Module):
     def __init__(
         self,
         tensor_info: Dict,
+        patch_size: int = None,
         # Convolutions options
         kernel_size_conv: int = 3,  
         padding: str = "valid",
@@ -98,7 +99,7 @@ class UNet(UNetModel, torch.nn.Module):
         self.output_feature_dim = tensor_info["output_n_feature"]
         self.output_y_dim = tensor_info["output_shape_info"]["dynamic"]["y"]
         self.output_x_dim = tensor_info["output_shape_info"]["dynamic"]["x"]
-
+        self.patch_size = patch_size
         ##--------------------------------------------------------------------.
         # Define size of last dimension for ConvChen conv (merging time-feature dimension)
         # TODO: to redefine based if applying Conv2D or Conv3D 
@@ -126,9 +127,6 @@ class UNet(UNetModel, torch.nn.Module):
             "activation_fun": activation_fun,
             "padding": 1,  # TODO GENERALIZE
         }
-        ##--------------------------------------------------------------------.            
-        # - Define UNet levels
-        UNet_depth = 3
        
         ##--------------------------------------------------------------------.
         ### Define Pooling - Unpooling layers
@@ -181,7 +179,7 @@ class UNet(UNetModel, torch.nn.Module):
         )
 
     ##------------------------------------------------------------------------.
-    def encode(self, x):
+    def encode(self, x, patches=True):
         """Define UNet encoder."""
         # TODO: Adapt to 2D spatial inputs 
         # --- TODO: Maybe create Conv2DBlock and Conv3DBlock
@@ -221,7 +219,7 @@ class UNet(UNetModel, torch.nn.Module):
         return x_enc3, x_enc2, x_enc1  #  x_enc11
 
     ##------------------------------------------------------------------------.
-    def decode(self, x_enc3, x_enc2, x_enc1):  # x_enc11):
+    def decode(self, x_enc3, x_enc2, x_enc1, patches=True):  # x_enc11):
         """Define UNet decoder."""
         # Block 2
         x = self.up1(x_enc3, x_enc2)

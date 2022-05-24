@@ -391,7 +391,7 @@ def plot_comparison_maps(ds: xr.Dataset,
                     "extend": "neither",
                     "label": model
                 }
-                cmap_params = {"cmap": "RdYlBu"}
+                cmap_params = {"cmap": "Spectral"}
                 ax = plot_map(ds[var].sel(model=model), 
                               ax=axs[ax_count], 
                               geodata=geodata, 

@@ -28,9 +28,9 @@
     "training_settings": {
         "epochs": 2,
         "ar_training_strategy": "RNN",
-        "learning_rate": 0.007,
-        "training_batch_size": 16,
-        "validation_batch_size": 16,
+        "learning_rate": 0.001,
+        "training_batch_size": 32,
+        "validation_batch_size": 32,
         "scoring_interval": 30,
         "save_model_each_epoch": false,
         "numeric_precision": "float32",

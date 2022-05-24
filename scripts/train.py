@@ -7,6 +7,7 @@ from pathlib import Path
 
 import time
 import dask
+import pandas as pd
 import xarray as xr
 import numpy as np
 from torch import optim
@@ -54,6 +55,7 @@ from nowproject.utils.plot import (
 from nowproject.utils.scalers import RainScaler, RainBinScaler
 from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
 from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic
+from nowproject.dataloader import AutoregressivePatchLearningDataLoader, AutoregressivePatchLearningDataset, autoregressive_patch_collate_fn
 
 def main(cfg_path, data_dir_path, static_data_path, test_events_path, 
          exp_dir_path, force=False):
@@ -75,12 +77,19 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries)
     data_static = load_static_topo_data(static_data_path, data_dynamic)
+
+    patch_size = 128
+    data_patches = pd.read_parquet(data_dir_path / "rzc_cropped_patches.parquet")
+    data_patches = data_patches.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x)).to_xarray()
+    data_patches = data_patches.assign_attrs({"patch_size": patch_size})
+    data_patches = data_patches.reindex({"time": data_dynamic.time.values}, fill_value="")
+
     data_bc = None
 
     ##------------------------------------------------------------------------.
     # Load scalers
     scaler = RainScaler(feature_min=np.log10(0.025), 
-                        feature_max=np.log10(150), 
+                        feature_max=np.log10(200), 
                         threshold=np.log10(0.1))
     
     # bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
@@ -94,7 +103,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ## - Defining time split for training
     # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-10-01T00:00", "2018-10-31T23:57:30"], dtype="M8[s]")
+    training_years = np.array(["2018-10-01T00:00", "2018-10-10T23:57:30"], dtype="M8[s]")
     validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
     test_events = create_test_events_time_range(test_events_path)[:1]
 
@@ -103,7 +112,14 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     training_data_dynamic = data_dynamic.sel(
         time=slice(training_years[0], training_years[-1])
     )
+    training_data_patches = data_patches.sel(
+        time=slice(training_years[0], training_years[-1])
+    )
+
     validation_data_dynamic = data_dynamic.sel(
+        time=slice(validation_years[0], validation_years[-1])
+    )
+    validation_data_patches = data_patches.sel(
         time=slice(validation_years[0], validation_years[-1])
     )
 
@@ -128,11 +144,31 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         data_static=data_static,
         data_bc=None,
     )
+    
+    # TODO: Modularize this (integrate in get_ar_model_tensor_info)
+    # tensor_info["input_shape_info"]["dynamic"]["y"] = patch_size
+    # tensor_info["input_shape_info"]["dynamic"]["x"] = patch_size
+    # tensor_info["input_shape_info"]["static"]["y"] = patch_size
+    # tensor_info["input_shape_info"]["static"]["x"] = patch_size
+
+    # tensor_info["output_shape_info"]["dynamic"]["y"] = patch_size
+    # tensor_info["output_shape_info"]["dynamic"]["x"] = patch_size
+
+    # tensor_info["input_shape"] = [
+    #     v if k != "feature" else tensor_info["input_n_feature"]
+    #     for k, v in tensor_info["input_shape_info"]["dynamic"].items()
+    # ]
+    # tensor_info["output_shape"] = [
+    #     v if k != "feature" else tensor_info["output_n_feature"]
+    #     for k, v in tensor_info["output_shape_info"]["dynamic"].items()
+    # ]
+
     print_tensor_info(tensor_info)
     # - Add dim info to cfg file
     model_settings["tensor_info"] = tensor_info
+    model_settings["patch_size"] = patch_size
     cfg["model_settings"]["tensor_info"] = tensor_info
-
+    
     ##------------------------------------------------------------------------.
     # Print model settings
     print_model_description(cfg)
@@ -150,7 +186,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     model = model.to(device)
 
     # Summarize the model
-    input_shape = tensor_info["input_shape"].copy()
+    if patch_size:
+        input_shape = tensor_info["input_shape"].copy()
+    else:
+        input_shape = tensor_info["input_shape"].copy()
     input_shape[0] = training_settings["training_batch_size"]
     print(
         summary(
@@ -175,7 +214,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         cfg["model_settings"]["model_name_suffix"] = None
 
     model_dir = create_experiment_directories(
-        exp_dir=exp_dir_path, model_name=model_name, suffix="LogNormalizeScaler-MaskedLoss", force=force
+        exp_dir=exp_dir_path, model_name=model_name, suffix="Patches-LogNormalizeScaler-MSE", force=force
     )  # force=True will delete existing directory
 
     # Define model weights filepath
@@ -189,8 +228,8 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define custom loss function
     # --> TODO: For masking we could simply set weights to 0 !!!
     # criterion = WeightedMSELoss(weights=weights)
-    criterion = WeightedMSELoss(reduction="mean_masked")
-    # criterion = FSSLoss(mask_size=5)
+    criterion = WeightedMSELoss(reduction="mean")
+    # criterion = FSSLoss(mask_size=3)
 
     ##------------------------------------------------------------------------.
     # - Define optimizer
@@ -267,8 +306,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         # Data
         data_static=data_static,
         training_data_dynamic=training_data_dynamic,
+        training_data_patches=training_data_patches,
         training_data_bc=None,
         validation_data_dynamic=validation_data_dynamic,
+        validation_data_patches=validation_data_patches,
         validation_data_bc=None,
         scaler=scaler,
         # Dataloader settings
@@ -303,7 +344,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ### Create plots related to training evolution
     print("========================================================================================")
     print("- Creating plots to investigate training evolution")
-    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.06))
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 1.0))
 
     ##-------------------------------------------------------------------------.
     ### - Create predictions

@@ -6,7 +6,8 @@ from torch.nn import (
     BatchNorm1d,
     BatchNorm2d,
     Conv2d,
-    Upsample
+    Upsample,
+    ConvTranspose2d
 )
 import torch.nn.functional as F
 
@@ -234,6 +235,7 @@ class Upsampling(torch.nn.Module):
             mid_channels, out_channels, **convblock_kwargs
         )
         self.up = Upsample(scale_factor=kernel_size_pooling, mode='bilinear', align_corners=True)
+        # self.up = ConvTranspose2d(in_channels, in_channels // 2, kernel_size=kernel_size_pooling, stride=2)
 
     def forward(self, x1, x2):
         x1 = self.up(x1)

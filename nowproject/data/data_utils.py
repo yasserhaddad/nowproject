@@ -2,8 +2,7 @@ import pathlib
 import xarray as xr
 import numpy as np
 
-from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES
-
+from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES 
 
 def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = None):
     data_dynamic = xr.open_zarr(data_dynamic_path)

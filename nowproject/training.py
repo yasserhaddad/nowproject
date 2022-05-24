@@ -36,6 +36,7 @@ from xforecasting.utils.xr import xr_is_aligned
 from xforecasting.utils.swag import bn_update_with_loader
 from xforecasting.training_autoregressive import timing_AR_Training
 
+from nowproject.dataloader import AutoregressivePatchLearningDataset, AutoregressivePatchLearningDataLoader
 
 def AutoregressiveTraining(
     model,
@@ -49,9 +50,11 @@ def AutoregressiveTraining(
     optimizer,
     # Data
     training_data_dynamic,
+    training_data_patches=None,
     training_data_bc=None,
     data_static=None,
     validation_data_dynamic=None,
+    validation_data_patches=None,
     validation_data_bc=None,
     bc_generator=None,
     scaler=None,
@@ -147,6 +150,7 @@ def AutoregressiveTraining(
         # Check training data
         if training_data_dynamic is None:
             raise ValueError("'training_data_dynamic' must be provided !")
+
         ##--------------------------------------------------------------------.
         ## Check validation data
         if validation_data_dynamic is not None:
@@ -178,9 +182,10 @@ def AutoregressiveTraining(
         ##--------------------------------------------------------------------.
         ### Create Datasets
         t_i = time.time()
-        training_ds = AutoregressiveDataset(
+        training_ds = AutoregressivePatchLearningDataset(
             data_dynamic=training_data_dynamic,
             data_bc=training_data_bc,
+            data_patches=training_data_patches,
             data_static=data_static,
             bc_generator=bc_generator,
             scaler=scaler,
@@ -197,9 +202,10 @@ def AutoregressiveTraining(
             device=device,
         )
         if validation_data_dynamic is not None:
-            validation_ds = AutoregressiveDataset(
+            validation_ds = AutoregressivePatchLearningDataset(
                 data_dynamic=validation_data_dynamic,
                 data_bc=validation_data_bc,
+                data_patches=validation_data_patches,
                 data_static=data_static,
                 bc_generator=bc_generator,
                 scaler=scaler,
@@ -228,7 +234,7 @@ def AutoregressiveTraining(
         #   However this mainly affect boundary conditions data, because dynamic data
         #   after few AR iterations are the predictions of previous AR iteration.
         t_i = time.time()
-        training_dl = AutoregressiveDataLoader(
+        training_dl = AutoregressivePatchLearningDataLoader(
             dataset=training_ds,
             batch_size=training_batch_size,
             drop_last_batch=drop_last_batch,
@@ -242,7 +248,7 @@ def AutoregressiveTraining(
             device=device,
         )
         if validation_data_dynamic is not None:
-            validation_dl = AutoregressiveDataLoader(
+            validation_dl = AutoregressivePatchLearningDataLoader(
                 dataset=validation_ds,
                 batch_size=validation_batch_size,
                 drop_last_batch=drop_last_batch,
@@ -281,29 +287,6 @@ def AutoregressiveTraining(
             ar_training_info = AR_TrainingInfo(
                 ar_iterations=ar_iterations, epochs=epochs, ar_scheduler=ar_scheduler
             )
-        
-        # timing_AR_Training(
-        #     training_ds,
-        #     model,
-        #     optimizer,
-        #     criterion,
-        #     reshape_tensors_4_loss,
-        #     ar_scheduler,
-        #     ar_training_strategy=ar_training_strategy,
-        #     # DataLoader options
-        #     batch_size=training_batch_size,
-        #     shuffle=shuffle,
-        #     shuffle_seed=shuffle_seed,
-        #     num_workers=num_workers,
-        #     prefetch_in_gpu=prefetch_in_gpu,
-        #     prefetch_factor=2,
-        #     pin_memory=pin_memory,
-        #     asyncronous_gpu_transfer=asyncronous_gpu_transfer,
-        #     # Timing options
-        #     training_mode=True,
-        #     n_repetitions=30,
-        #     verbose=True,
-        # )
 
         ##--------------------------------------------------------------------.
         # Get dimension and feature infos
