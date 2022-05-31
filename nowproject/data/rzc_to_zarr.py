@@ -15,7 +15,7 @@ from multiprocessing import Pool, cpu_count
 
 import zarr
 from xforecasting.utils.zarr import rechunk_Dataset, write_zarr
-from .data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
+from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
 
 import warnings
 from warnings import warn
@@ -70,9 +70,7 @@ def get_metranet_header_dictionary(radar_file: str):
         return None
 
 
-def read_rzc_file(input_path: pathlib.Path,  
-                  row_start: int = 0, row_end: int = 640, 
-                  col_start: int = 0, col_end: int = 710) -> xr.Dataset:
+def read_rzc_file(input_path: pathlib.Path) -> xr.Dataset:
     metranet = pyart.aux_io.read_cartesian_metranet(input_path.as_posix(), reader="python")
     rzc = metranet.fields['radar_estimated_rain_rate']['data'][0,:,:]
 
@@ -106,8 +104,6 @@ def read_rzc_file(input_path: pathlib.Path,
                 ),
                 attrs={},
             )
-    
-    ds = ds.isel(x=slice(col_start, col_end+1), y=slice(row_start, row_end+1))
 
     return ds
 
