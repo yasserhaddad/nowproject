@@ -34,10 +34,10 @@ class UNetModel(NowProject):
         """Decode low dimensional data into a high dimensional space."""
         pass
 
-    def forward(self, x, patches=True):
+    def forward(self, x, training=True):
         """Implement a forward pass."""
-        x_encoded = self.encode(x, patches=patches)
-        output = self.decode(*x_encoded, patches=patches)
+        x_encoded = self.encode(x, training=training)
+        output = self.decode(*x_encoded, training=training)
         return output
 
 

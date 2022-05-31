@@ -62,7 +62,7 @@ def reshape_tensors_4_loss(Y_pred, Y_obs, dim_info_dynamic, channels_first=False
 ### Loss definitions ###
 ########################
 class WeightedMSELoss(nn.MSELoss):
-    def __init__(self, reduction="mean", weights=None, masked=False):
+    def __init__(self, reduction="mean", weights=None, zero_value=0):
         super(WeightedMSELoss, self).__init__(reduction="none")
         if not isinstance(reduction, str) or reduction not in ("mean", "mean_masked", "sum", "none"):
             raise ValueError("{} is not a valid value for reduction".format(reduction))
@@ -71,11 +71,12 @@ class WeightedMSELoss(nn.MSELoss):
         if weights is not None:
             self.check_weights(weights)
         self.weights = weights
+        self.zero_value = zero_value
 
-    def forward(self, pred, label):
+    def forward(self, label, pred):
         if self.weighted_mse_reduction == "mean_masked":
-            mask = label > 0
-            pred = torch.where(mask, pred, torch.tensor(0.).to(pred.device)) 
+            mask = label > self.zero_value
+            pred = torch.where(mask, pred, torch.tensor(float(self.zero_value)).to(pred.device)) 
         mse = super(WeightedMSELoss, self).forward(pred, label)
         weights = self.weights
         n_batch, n_y, n_x, n_val = mse.shape
@@ -96,7 +97,7 @@ class WeightedMSELoss(nn.MSELoss):
             return torch.sum(weighted_mse) / torch.sum(weights) / n_batch / n_val
         elif self.weighted_mse_reduction == "mean_masked":
             len_mask = torch.sum(mask)
-            len_mask = len_mask if len_mask > 0 else 1.0
+            len_mask = len_mask if len_mask > self.zero_value else 1.0
             return torch.sum(weighted_mse) / len_mask
         else:
             return weighted_mse
@@ -120,7 +121,7 @@ class FSSLoss(nn.Module):
         self.pool1 = nn.AvgPool2d(kernel_size=(self.mask_size, self.mask_size), stride=(1, 1))
         self.pool2 = nn.AvgPool2d(kernel_size=(self.mask_size, self.mask_size), stride=(1, 1))
 
-    def forward(self, pred, label):
+    def forward(self, label, pred):
         # Soft discretization
         c = 10 # make sigmoid function steep
         label_binary = torch.sigmoid(c * (label - self.cutoff))

@@ -16,7 +16,7 @@ config_path = pathlib.Path("/home/haddad/nowproject/configs")
 # Get default settings
 cfg = get_default_settings()
 
-# Current experiment (6h deltat)
+# Current experiment
 cfg["ar_settings"]["input_k"] = [-5, -4, -3, -2, -1]
 cfg["ar_settings"]["output_k"] = [0]
 cfg["ar_settings"]["forecast_cycle"] = 1
