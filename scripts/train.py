@@ -17,7 +17,6 @@ from xforecasting.utils.io import get_ar_model_tensor_info
 from xforecasting.utils.torch import summarize_model
 from xforecasting import (
     AR_Scheduler,
-    AutoregressivePredictions,
     rechunk_forecasts_for_verification,
     EarlyStopping,
 )
@@ -46,16 +45,16 @@ from torch import nn
 import nowproject.architectures as dl_architectures
 from nowproject.loss import FSSLoss, WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
+from nowproject.predictions import AutoregressivePredictions
 from nowproject.utils.plot import (
     plot_skill_maps, 
     plot_averaged_skill,
     plot_averaged_skills, 
     plot_skills_distribution
 )
-from nowproject.utils.scalers import RainScaler, RainBinScaler
+from nowproject.utils.scalers import RainScaler, RainBinScaler, LogScaler, dBScaler
 from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
-from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic
-from nowproject.dataloader import AutoregressivePatchLearningDataLoader, AutoregressivePatchLearningDataset, autoregressive_patch_collate_fn
+from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, get_tensor_info_with_patches
 
 def main(cfg_path, data_dir_path, static_data_path, test_events_path, 
          exp_dir_path, force=False):
@@ -71,6 +70,8 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     training_settings = get_training_settings(cfg)
     dataloader_settings = get_dataloader_settings(cfg)
 
+    model_settings["conv_type"] = "spectral"
+
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
@@ -82,30 +83,36 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     data_patches = pd.read_parquet(data_dir_path / "rzc_cropped_patches.parquet")
     data_patches = data_patches.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x)).to_xarray()
     data_patches = data_patches.assign_attrs({"patch_size": patch_size})
-    data_patches = data_patches.reindex({"time": data_dynamic.time.values}, fill_value="")
+    # data_patches = data_patches.reindex({"time": data_dynamic.time.values}, fill_value="")
 
     data_bc = None
 
     ##------------------------------------------------------------------------.
     # Load scalers
     scaler = RainScaler(feature_min=np.log10(0.025), 
-                        feature_max=np.log10(200), 
+                        feature_max=np.log10(100), 
                         threshold=np.log10(0.1))
+    model_settings["last_layer_activation"] = False
     
     # bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
 
     # centres = [0] + [(bins[i] + bins[i+1])/2 for i in range(0, len(bins)-1)] + [np.nan]
     # scaler = RainBinScaler(bins, centres)
+    # model_settings["last_layer_activation"] = False
 
+    # scaler = LogScaler(epsilon=1e-5)
+    # model_settings["last_layer_activation"] = True
 
+    # scaler = dBScaler(threshold=0.1, inverse_threshold=-10.0, zero_value=-15.0)
+    # model_settings["last_layer_activation"] = False
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
     # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-10-01T00:00", "2018-10-10T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
-    test_events = create_test_events_time_range(test_events_path)[:1]
+    training_years = np.array(["2018-10-01T00:00", "2018-11-30T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-01-20T23:57:30"], dtype="M8[s]")
+    test_events = create_test_events_time_range(test_events_path)[:3]
 
     # - Split data sets
     t_i = time.time()
@@ -135,7 +142,6 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ## - Here inside the training precision is set (currently only float32 works)
     device = set_pytorch_settings(training_settings)
 
-
     ##------------------------------------------------------------------------.
     # Retrieve dimension info of input-output Torch Tensors
     tensor_info = get_ar_model_tensor_info(
@@ -144,29 +150,12 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         data_static=data_static,
         data_bc=None,
     )
-    
-    # TODO: Modularize this (integrate in get_ar_model_tensor_info)
-    # tensor_info["input_shape_info"]["dynamic"]["y"] = patch_size
-    # tensor_info["input_shape_info"]["dynamic"]["x"] = patch_size
-    # tensor_info["input_shape_info"]["static"]["y"] = patch_size
-    # tensor_info["input_shape_info"]["static"]["x"] = patch_size
 
-    # tensor_info["output_shape_info"]["dynamic"]["y"] = patch_size
-    # tensor_info["output_shape_info"]["dynamic"]["x"] = patch_size
-
-    # tensor_info["input_shape"] = [
-    #     v if k != "feature" else tensor_info["input_n_feature"]
-    #     for k, v in tensor_info["input_shape_info"]["dynamic"].items()
-    # ]
-    # tensor_info["output_shape"] = [
-    #     v if k != "feature" else tensor_info["output_n_feature"]
-    #     for k, v in tensor_info["output_shape_info"]["dynamic"].items()
-    # ]
+    tensor_info = get_tensor_info_with_patches(tensor_info, patch_size)
 
     print_tensor_info(tensor_info)
     # - Add dim info to cfg file
     model_settings["tensor_info"] = tensor_info
-    model_settings["patch_size"] = patch_size
     cfg["model_settings"]["tensor_info"] = tensor_info
     
     ##------------------------------------------------------------------------.
@@ -186,10 +175,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     model = model.to(device)
 
     # Summarize the model
-    if patch_size:
-        input_shape = tensor_info["input_shape"].copy()
-    else:
-        input_shape = tensor_info["input_shape"].copy()
+    input_shape = tensor_info["input_shape"]["train"].copy()
     input_shape[0] = training_settings["training_batch_size"]
     print(
         summary(
@@ -199,7 +185,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     _ = summarize_model(
         model=model,
-        input_size=tuple(tensor_info["input_shape"][1:]),
+        input_size=tuple(tensor_info["input_shape"]["train"][1:]),
         batch_size=training_settings["training_batch_size"],
         device=device,
     )
@@ -214,7 +200,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         cfg["model_settings"]["model_name_suffix"] = None
 
     model_dir = create_experiment_directories(
-        exp_dir=exp_dir_path, model_name=model_name, suffix="Patches-LogNormalizeScaler-MSE", force=force
+        exp_dir=exp_dir_path, model_name=model_name, suffix=f"Patches-LogNormalizeScaler-MSE-Spectral-{training_settings['epochs']}epochs", force=force
     )  # force=True will delete existing directory
 
     # Define model weights filepath
@@ -357,8 +343,6 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         shutil.rmtree(forecast_zarr_fpath)
 
     dask.config.set(scheduler="synchronous")  # This is very important otherwise the dataloader hang 
-    # ds_forecasts = []
-    # for i, event in enumerate(test_events):
 
     ds_forecasts = AutoregressivePredictions(
         model=model,
@@ -446,9 +430,20 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
         forecast_type="categorical",
         aggregating_dim="time",
+        thr=0.1
     )
     # - Save sptial skills
     ds_det_cat_skill.to_netcdf((model_dir / "model_skills" / "deterministic_categorical_spatial_skill.nc"))
+
+    ds_det_spatial_skill = xverif.deterministic(
+        pred=ds_verification_format.chunk({"x": -1, "y": -1}),
+        obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"x": -1, "y": -1}),
+        forecast_type="spatial",
+        aggregating_dim=["x", "y"],
+        thr=0.1,
+        win_size=5
+    )
+    ds_det_spatial_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc"))
 
     ##------------------------------------------------------------------------.
     ### - Create verification summary plots and maps
@@ -456,9 +451,19 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     print("- Create verification summary plots and maps")
     ds_cont_averaged_skill = ds_det_cont_skill.mean(dim=["y", "x"])
     ds_cat_averaged_skill = ds_det_cat_skill.mean(dim=["y", "x"])
+    ds_spatial_average_skill = ds_det_spatial_skill.mean(dim=["time"])
+
     # - Save averaged skills
     ds_cont_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_continuous_global_skill.nc")
     ds_cat_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_categorical_global_skill.nc")
+    ds_spatial_average_skill.to_netcdf(model_dir / "model_skills" / "deterministic_spatial_global_skill.nc")
+
+    print("RMSE:")
+    print(ds_cont_averaged_skill["feature"].sel(skill="RMSE").values)
+    print("F1:")
+    print(ds_cat_averaged_skill["feature"].sel(skill="F1").values)
+    print("csi:")
+    print(ds_cat_averaged_skill["feature"].sel(skill="CSI").values)
 
 
     # # bbox = (451000, 30000, 850000, 319000)
@@ -482,6 +487,12 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     plot_averaged_skills(ds_cont_averaged_skill, variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "averaged_continuous_skill.png"
     )
+
+    plot_averaged_skills(ds_cat_averaged_skill, 
+                     skills=["POD", "FAR", "FA", "ACC", "CSI", "F1"], variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "averaged_categorical_skills.png"
+    )
+
     plot_skills_distribution(ds_det_cont_skill, variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "skills_distribution.png",
     )
@@ -500,7 +511,9 @@ if __name__ == "__main__":
     default_data_dir = "/ltenas3/0_Data/NowProject/"
     default_static_data_path = "/ltenas3/0_GIS/DEM Switzerland/srtm_Switzerland_EPSG21781.tif"
     default_exp_dir = "/home/haddad/experiments/"
-    default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
+    # default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
+    default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
+    # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
     default_test_events = "/home/haddad/nowproject/configs/events.json"
 
     parser = argparse.ArgumentParser(

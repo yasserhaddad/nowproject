@@ -1,5 +1,5 @@
-from turtle import forward
 import torch
+from torch import nn
 from torch.nn import (
     Linear,
     Identity,
@@ -10,6 +10,62 @@ from torch.nn import (
     ConvTranspose2d
 )
 import torch.nn.functional as F
+
+#Complex multiplication
+class SpectralConv2d_fast(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super(SpectralConv2d_fast, self).__init__()
+
+        """
+        2D Fourier layer. It does FFT, linear transform, and Inverse FFT.    
+        """
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.modes1 = modes1
+        self.modes2 = modes2
+
+        self.scale = (1 / (in_channels * out_channels))
+        self.weights1 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+        self.weights2 = nn.Parameter(self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+
+    # Complex multiplication
+    def compl_mul2d(self, input, weights):
+        # (batch, in_channel, x,y ), (in_channel, out_channel, x,y) -> (batch, out_channel, x,y)
+        return torch.einsum("bixy,ioxy->boxy", input, weights)
+
+    def forward(self, x):
+        batchsize = x.shape[0]
+        #Compute Fourier coeffcients up to factor of e^(- something constant)
+        x_ft = torch.fft.rfft2(x)
+
+        # Multiply relevant Fourier modes
+        out_ft = torch.zeros(batchsize, self.out_channels,  x.size(-2), x.size(-1)//2 + 1, dtype=torch.cfloat, device=x.device)
+        out_ft[:, :, :self.modes1, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
+        out_ft[:, :, -self.modes1:, :self.modes2] = \
+            self.compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
+
+        #Return to physical space
+        x = torch.fft.irfft2(out_ft, s=(x.size(-2), x.size(-1)))
+        return x
+
+##----------------------------------------------------------------------------.
+class FNO2d(nn.Module):
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        self.conv0 = SpectralConv2d_fast(self.in_channels, self.out_channels, modes1, modes2)
+        self.w0 = Conv2d(self.in_channels, self.out_channels, 1)
+
+    def forward(self, x):
+        x1 = self.conv0(x)
+        x2 = self.w0(x)
+        x = x1 + x2
+
+        return x
 
 ##----------------------------------------------------------------------------.
 class ConvBlock(torch.nn.Module):
@@ -48,8 +104,12 @@ class ConvBlock(torch.nn.Module):
         batch_norm_before_activation=False,
         activation=True,
         activation_fun="relu",
-        padding="valid", 
+        padding="valid",
+        padding_mode="replicate", 
         dilation=1,
+        conv_type="regular",
+        modes1=None,
+        modes2=None
     ):
 
         super().__init__()
@@ -61,15 +121,30 @@ class ConvBlock(torch.nn.Module):
         # - ‘valid’, ‘same’ or 0,1, ... 
         # - 'padding_mode': 'zeros', 'reflect', 'replicate' or 'circular'  (GG: maybe replicate/reflect is better)
         # torch.nn.Conv2d(in_chan stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
-                        
-        self.conv = Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            bias=bias,
-            padding=padding,
-            dilation=dilation,
-        )
+        if conv_type == "spectral":
+            self.conv = SpectralConv2d_fast(
+                in_channels,
+                out_channels,
+                modes1,
+                modes2
+            )
+        elif conv_type == "fno":
+            self.conv = FNO2d(
+                in_channels,
+                out_channels,
+                modes1=modes1,
+                modes2=modes2
+            )
+        else:
+            self.conv = Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size,
+                bias=bias,
+                padding=padding,
+                padding_mode=padding_mode,
+                dilation=dilation,
+            )
         if batch_norm:
             self.bn = BatchNorm2d(out_channels)
         self.bn_before_act = batch_norm_before_activation
@@ -80,18 +155,17 @@ class ConvBlock(torch.nn.Module):
     def forward(self, x):
         """Define forward pass of a ConvBlock.
 
-        It expects a tensor with shape: (sample, time, x, y).
+        It expects a tensor with shape: (sample, time, y, x).
         """
-        # TODO adapt !!!!
         x = self.conv(x)
         if self.norm and self.bn_before_act:
-            # [batch, node, time-feature]
-            x = self.bn(x.permute(0, 2, 1)).permute(0, 2, 1)
+            # [batch, y, x, time-feature]
+            x = self.bn(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
         if self.act:
             x = self.act_fun(x)
         if self.norm and not self.bn_before_act:
-            # [batch, node, time-feature]
-            x = self.bn(x.permute(0, 2, 1)).permute(0, 2, 1)
+            # [batch, y, x, time-feature]
+            x = self.bn(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
         return x
 
 

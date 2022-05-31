@@ -198,6 +198,8 @@ def AutoregressiveTraining(
             forecast_cycle=forecast_cycle,
             ar_iterations=ar_scheduler.current_ar_iterations,
             stack_most_recent_prediction=stack_most_recent_prediction,
+            # Timesteps
+            subset_timesteps=(training_data_patches.time.values if training_data_patches is not None else None),
             # GPU settings
             device=device,
         )
@@ -218,6 +220,8 @@ def AutoregressiveTraining(
                 forecast_cycle=forecast_cycle,
                 ar_iterations=ar_scheduler.current_ar_iterations,
                 stack_most_recent_prediction=stack_most_recent_prediction,
+                # Timesteps
+                subset_timesteps=(validation_data_patches.time.values if validation_data_patches is not None else None),
                 # GPU settings
                 device=device,
             )
@@ -686,7 +690,7 @@ def AutoregressiveTraining(
                             ##------------------------------------------------.
                             # Update DataLoaders (to prefetch the correct amount of data)
                             shuffle_seed += 1
-                            training_dl = AutoregressiveDataLoader(
+                            training_dl = AutoregressivePatchLearningDataLoader(
                                 dataset=training_ds,
                                 batch_size=training_batch_size,
                                 drop_last_batch=drop_last_batch,
@@ -704,7 +708,7 @@ def AutoregressiveTraining(
                                 validation_ds.update_ar_iterations(
                                     ar_scheduler.current_ar_iterations
                                 )
-                                validation_dl = AutoregressiveDataLoader(
+                                validation_dl = AutoregressivePatchLearningDataLoader(
                                     dataset=validation_ds,
                                     batch_size=validation_batch_size,
                                     drop_last_batch=drop_last_batch,

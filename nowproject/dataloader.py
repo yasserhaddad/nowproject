@@ -237,18 +237,18 @@ class AutoregressivePatchLearningDataset(Dataset):
         self.t_res_timedelta = np.diff(data_dynamic["time"].values)[0]
 
         # Check that patches and dynamic data have same temporal resolution
-        if data_availability["patches"]:
-            if not xr_has_uniform_resolution(data_patches, dim="time"):
-                raise ValueError(
-                    "'data_patches' does not have a uniform 'time' resolution."
-                )
+        # if data_availability["patches"]:
+        #     if not xr_has_uniform_resolution(data_patches, dim="time"):
+        #         raise ValueError(
+        #             "'data_patches' does not have a uniform 'time' resolution."
+        #         )
 
-            if not xr_have_same_timesteps(data_dynamic, data_patches, time_dim="time"):
-                print(
-                    "'data_dynamic' and 'data_patches' do not have the same timesteps."
-                    "Data are going to be re-aligned along the 'time' dimension."
-                )
-                data_dynamic, data_patches = xr_align_dim(data_dynamic, data_patches, dim="time")
+        #     if not xr_have_same_timesteps(data_dynamic, data_patches, time_dim="time"):
+        #         print(
+        #             "'data_dynamic' and 'data_patches' do not have the same timesteps."
+        #             "Data are going to be re-aligned along the 'time' dimension."
+        #         )
+        #         data_dynamic, data_patches = xr_align_dim(data_dynamic, data_patches, dim="time")
 
         if data_availability["bc"]:
             if not xr_has_uniform_resolution(data_bc, dim="time"):
@@ -626,7 +626,9 @@ class AutoregressivePatchLearningDataset(Dataset):
 
         ## -------------------------------------------------------------------.
         if self.data_availability["patches"]:
-            patches = list(set(convert_str_patch_idx_to_int(self.data_patches.values[xr_idx_k_0])))
+            idx_patch = idx + len(self.input_k) if self.subset_timesteps is not None \
+                        else xr_idx_k_0
+            patches = list(set(convert_str_patch_idx_to_int(self.data_patches.values[idx_patch])))
             patch_size = self.data_patches.attrs["patch_size"]
             if len(patches) > 0:
                 (y0, x0) = patches[np.random.choice(range(len(patches)))]

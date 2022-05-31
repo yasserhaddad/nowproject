@@ -47,7 +47,7 @@ from nowproject.training import AutoregressiveTraining
 from nowproject.utils.scalers import RainBinScaler, RainScaler
 from nowproject.utils.plot import plot_averaged_skill, plot_averaged_skills, plot_skills_distribution
 
-model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling-LogNormalizeScaler-MaskedLoss/")
+model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling-Patches-LogNormalizeScaler-MSE/")
 
 # %load_ext autoreload
 # %autoreload 2

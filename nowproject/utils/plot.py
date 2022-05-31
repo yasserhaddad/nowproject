@@ -7,11 +7,12 @@ import pyproj
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from matplotlib.axes import Axes
-from matplotlib.colors import Colormap
+from matplotlib.colors import Colormap, Normalize
 import matplotlib.pyplot as plt
-from pysteps.visualization.precipfields import plot_precip_field
+from pysteps.visualization.precipfields import plot_precip_field, get_colormap
 from nowproject.data.data_config import METADATA
 from cartopy.mpl.geoaxes import GeoAxesSubplot
+from PIL import Image
 
 from xarray.plot.utils import _add_colorbar, label_from_attrs
 from pysteps.visualization.utils import get_geogrid, get_basemap_axis, proj4_to_cartopy
@@ -120,6 +121,7 @@ SKILL_YLIM_DICT = {
 def _plot_map_cartopy(
     crs,
     extent,
+    figsize=(8, 5),
     cartopy_scale="50m",
     ax=None,
     drawlonlatlines=False,
@@ -155,7 +157,7 @@ def _plot_map_cartopy(
         Cartopy axes. Compatible with matplotlib.
     """
     if not ax:
-        ax = plt.gca()
+        ax = plt.gca(figsize=figsize)
 
     if not isinstance(ax, GeoAxesSubplot):
         ax = plt.subplot(ax.get_subplotspec(), projection=crs)
@@ -262,7 +264,7 @@ def _plot_map_cartopy(
 
 
 
-def _plot_field(values: np.ndarray, ax: Axes, cmap: Colormap, x_grid: np.ndarray = None, 
+def _plot_field(values: np.ndarray, ax: Axes, cmap: Colormap, norm: Normalize = None, x_grid: np.ndarray = None, 
                 y_grid: np.ndarray = None, extent: Tuple[float] = None, origin: str = None,
                 vmin: float = None, vmax: float = None):
      
@@ -270,6 +272,7 @@ def _plot_field(values: np.ndarray, ax: Axes, cmap: Colormap, x_grid: np.ndarray
         im = ax.imshow(
             values,
             cmap=cmap,
+            norm=norm,
             extent=extent,
             interpolation="nearest",
             origin=origin,
@@ -283,6 +286,7 @@ def _plot_field(values: np.ndarray, ax: Axes, cmap: Colormap, x_grid: np.ndarray
                 y_grid,
                 values,
                 cmap=cmap,
+                norm=norm,
                 zorder=10,
                 vmin=vmin,
                 vmax=vmax
@@ -291,8 +295,9 @@ def _plot_field(values: np.ndarray, ax: Axes, cmap: Colormap, x_grid: np.ndarray
     return im
 
 def plot_map(da: xr.DataArray, geodata: dict, title: str = None, ax=None, bbox=None, 
-             vmin: float = None, vmax: float = None, colorbar: bool = True, axis: str = "off", 
-             map_kwargs: dict = None, cbar_params: dict = None, cmap_params: dict = None):
+             vmin: float = None, vmax: float = None, colorbar: bool = True, 
+             axis: str = "off", map_kwargs: dict = None, cbar_params: dict = None, 
+             cmap_params: dict = None, return_im: bool = False):
 
     values = da.data.copy()
     values = np.ma.masked_invalid(values)
@@ -307,12 +312,16 @@ def plot_map(da: xr.DataArray, geodata: dict, title: str = None, ax=None, bbox=N
     # ax = get_basemap_axis(extent, ax=ax, geodata=geodata, map_kwargs=map_kwargs)
     ax = _plot_map_cartopy(proj4_to_cartopy(geodata["projection"]), extent, ax=ax)
     
-    cmap = plt.get_cmap("Reds") if not cmap_params else cmap_params.get("cmap", plt.get_cmap("Reds"))
+    if not cmap_params:
+        cmap, norm, _, _ = get_colormap("intensity")
+    else:
+        cmap = cmap_params.get("cmap", plt.get_cmap("Reds"))
+        norm = None if not cmap_params else cmap_params.get("norm", None)
     
     if regular_grid:
-        im = _plot_field(values, ax, cmap, extent=extent, origin=origin, vmin=vmin, vmax=vmax)
+        im = _plot_field(values, ax, cmap, norm=norm, extent=extent, origin=origin, vmin=vmin, vmax=vmax)
     else:
-        im = _plot_field(values, ax, cmap, extent=extent, x_grid=x_grid, y_grid=y_grid, 
+        im = _plot_field(values, ax, cmap, norm=norm, extent=extent, x_grid=x_grid, y_grid=y_grid, 
                          vmin=vmin, vmax=vmax)
 
     if title:
@@ -320,17 +329,31 @@ def plot_map(da: xr.DataArray, geodata: dict, title: str = None, ax=None, bbox=N
 
     # add colorbar
     if colorbar:
+        if not cbar_params:
+            _, _, clevs, clevs_str = get_colormap("intensity")
+            cbar_params = {
+                "extend": "max",
+                "shrink": 0.8,
+                "label": "",
+                "ticks": clevs,
+                "clevs_str": clevs_str
+            }
         if "label" not in cbar_params:
             cbar_params["label"] = label_from_attrs(da)
+        ticks = None if not cbar_params else cbar_params.get("ticks", None)
+        clevs_str = cbar_params.get("clevs_str", None)
         cbar = plt.colorbar(
             im, 
             ax=ax, 
+            ticks=ticks,
             spacing="uniform",
             extend=cbar_params.get("extend", "max"), 
             shrink=cbar_params.get("shrink", 0.8), 
             cax=None,
         )
         cbar.set_label(cbar_params["label"])
+        if clevs_str is not None:
+            cbar.ax.set_yticklabels(clevs_str)
         
         # cbar = _add_colorbar(im, ax, cbar_ax=None, cbar_kwargs=cbar_kwargs, cmap_params=cmap_params)
 
@@ -344,84 +367,277 @@ def plot_map(da: xr.DataArray, geodata: dict, title: str = None, ax=None, bbox=N
         ax.set_xlim(bbox[0], bbox[2])
         ax.set_ylim(bbox[1], bbox[3])
 
-    return ax
+    if return_im:
+        return im
+    else:
+        return ax
 
 
-def plot_comparison_maps(ds: xr.Dataset, 
+# def plot_precip(precip, )
+
+
+def plot_forecast_error_comparison(figs_dir: pathlib.Path,
+                                   ds_forecast: xr.Dataset,
+                                   ds_obs: xr.Dataset,
+                                   geodata: dict = None,
+                                   bbox: Tuple[int] = None,
+                                   aspect_cbar: int = 40,
+                                   save_gif: bool = True,
+                                   fps: int = 4,
+                                 ):
+    
+    figs_dir.mkdir(exist_ok=True)
+
+    forecast_reference_time = str(ds_forecast['forecast_reference_time'].values.astype('datetime64[s]'))
+    (figs_dir / f"tmp_{forecast_reference_time}").mkdir(exist_ok=True)
+    # Load data into memory
+    ds_forecast = ds_forecast.load()
+
+    # Retrieve valid time 
+    valid_time = ds_forecast['forecast_reference_time'].values + ds_forecast['leadtime'].values
+    ds_forecast = ds_forecast.assign_coords({'time': ('leadtime', valid_time)})
+    ds_forecast = ds_forecast.swap_dims({'leadtime': 'time'})
+
+    # Subset observations and load in memory
+    ds_obs = ds_obs.sel(time=ds_forecast['time'].values)
+    ds_obs = ds_obs.load()
+
+    # Compute error 
+    ds_error = ds_forecast - ds_obs 
+
+    # Create a dictionary with relevant infos  
+    ds_dict = {"pred": ds_forecast, "obs": ds_obs, "error": ds_error}
+
+    # Retrieve common variables to plot 
+    variables = list(ds_forecast.data_vars.keys())
+    cmap, norm, clevs, clevs_str = get_colormap("intensity")
+    cmap_params = {"cmap": cmap, "norm": norm, "ticks": clevs}
+    pil_frames = []
+    for i, leadtime in enumerate(ds_forecast.leadtime.values):
+        filepath = figs_dir / f"tmp_{forecast_reference_time}" / f"L{i:02d}.png"
+        ##--------------------------------------------------------------------.
+        # Define super title
+        suptitle = "Forecast reference time: {}, Lead time: {}".format(
+            forecast_reference_time, 
+            str(leadtime.astype("timedelta64[m]"))
+        )
+        # Create figure
+        fig, axs = plt.subplots(
+            len(variables),
+            3,
+            figsize=(18, 4*len(variables)),
+            subplot_kw={'projection': proj4_to_cartopy(METADATA["projection"])}
+        )
+
+        fig.suptitle(suptitle, y=1.05)
+        ##---------------------------------------------------------------------.
+        # Initialize
+        axs = axs.flatten()
+        ax_count = 0
+        ##---------------------------------------------------------------------.
+        # Plot each variable
+        for var in variables:
+            tmp_obs = ds_dict['obs'][var].isel(time=i)
+            # Plot obs 
+            im_1 = plot_map(tmp_obs,
+                          ax=axs[ax_count], 
+                          geodata=geodata, 
+                          title=None, 
+                          colorbar=False,
+                          cmap_params=cmap_params, 
+                          bbox=bbox,
+                          vmin=0,
+                          vmax=30,
+                          return_im=True)
+            axs[ax_count].set_title(None)
+            axs[ax_count].outline_patch.set_linewidth(1)
+
+            tmp_pred = ds_dict['pred'][var].isel(time=i)
+            # Plot 
+            im_2 = plot_map(tmp_pred,
+                          ax=axs[ax_count+1], 
+                          geodata=geodata, 
+                          title=None, 
+                          colorbar=False,
+                          cmap_params=cmap_params, 
+                          bbox=bbox,
+                          vmin=0,
+                          vmax=30,
+                          return_im=True)
+            axs[ax_count+1].set_title(None)
+            axs[ax_count+1].outline_patch.set_linewidth(1)
+            # - Add state colorbar
+            cbar = fig.colorbar(im_2, ax=axs[[ax_count, ax_count+1]], 
+                                orientation="horizontal", 
+                                extend = 'both',
+                                aspect=aspect_cbar)       
+            cbar.set_label(var.upper())
+            cbar.ax.xaxis.set_label_position('top')
+
+            error_cmap_params = {"cmap": "Spectral"}
+            tmp_error = ds_dict['error'][var].isel(time=i)
+            im_3 = plot_map(tmp_error,
+                          ax=axs[ax_count+2], 
+                          geodata=geodata, 
+                          title=None, 
+                          colorbar=False,
+                          cmap_params=error_cmap_params, 
+                          bbox=bbox,
+                          vmin=-20,
+                          vmax=20,
+                          return_im=True)
+            axs[ax_count+2].set_title(None)
+            axs[ax_count+2].outline_patch.set_linewidth(1)
+            # - Add error colorbar
+            # cb = plt.colorbar(e_p, ax=axs[ax_count+2], orientation="horizontal") # pad=0.15)
+            # cb.set_label(label=var.upper() + " Error") # size='large', weight='bold'
+            cbar_err = fig.colorbar(im_3, ax=axs[ax_count+2],
+                                    orientation="horizontal",
+                                    extend = 'both',
+                                    aspect = aspect_cbar/2)      
+            cbar_err.set_label(var.upper() + " Error")
+            cbar_err.ax.xaxis.set_label_position('top')
+            # Add plot labels 
+            # if ax_count == 0: 
+            axs[ax_count].set_title("Observed")     
+            axs[ax_count+1].set_title("Predicted")  
+            axs[ax_count+2].set_title("Error")
+            # Update ax_count 
+            ax_count += 3
+
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        if save_gif:
+            pil_frames.append(Image.open(filepath).convert("P",palette=Image.ADAPTIVE))
+            # fig.canvas.draw()
+            # pil_frames.append(Image.frombytes('RGB', fig.canvas.get_width_height(),fig.canvas.tostring_rgb()).convert("P"))
+
+    if save_gif:
+        pil_frames[0].save(
+            figs_dir / f"{forecast_reference_time}.gif",
+            format="gif",
+            save_all=True,
+            append_images=pil_frames[1:],
+            duration=1 / fps * 1000,  # ms
+            loop=False,
+        )
+
+
+def plot_comparison_maps(ds_forecast_list: List[xr.Dataset],
+                         forecast_labels: List[str],
+                         ds_obs: xr.Dataset,
                          figs_dir: pathlib.Path,
                          geodata: dict = None,
                          bbox: Tuple[int] = None,
-                         variables: List[str] = ["feature"],
-                         suffix: str = "",
-                         prefix: str = ""
+                         aspect_cbar: int = 40,
+                         save_gif: bool = True,
+                         fps: int = 4,
                         ):
     figs_dir.mkdir(exist_ok=True)
-    models = ds.models.values
-    ##------------------------------------------------------------------------.
-    # Create a figure for each leadtime
-    for i, leadtime in enumerate(ds.leadtime.values):
-        ds = ds.sel(leadtime=leadtime)
+
+    forecast_reference_time = str(ds_forecast_list[0]['forecast_reference_time'].values.astype('datetime64[s]'))
+    (figs_dir / f"tmp_{forecast_reference_time}").mkdir(exist_ok=True)
+    # Load data into memory
+    ds_forecast_list = [ds_forecast.sel(leadtime=ds_forecast_list[0]['leadtime'].values)\
+                                   .load() for ds_forecast in ds_forecast_list]
+
+    # Retrieve valid time 
+    valid_time = ds_forecast_list[0]['forecast_reference_time'].values + ds_forecast_list[0]['leadtime'].values
+    ds_forecast_list = [ds_forecast.assign_coords({'time': ('leadtime', valid_time)}).swap_dims({'leadtime': 'time'})\
+                        for ds_forecast in ds_forecast_list]
+
+    # Subset observations and load in memory
+    ds_obs = ds_obs.sel(time=ds_forecast_list[0]['time'].values)
+    ds_obs = ds_obs.load()
+
+    # Retrieve common variables to plot 
+    variables = list(set.intersection(*map(set, [ds_forecast.data_vars.keys() for ds_forecast in ds_forecast_list])))
+    
+    cmap, norm, clevs, clevs_str = get_colormap("intensity")
+    cmap_params = {"cmap": cmap, "norm": norm, "ticks": clevs}
+    pil_frames = []
+    for i, leadtime in enumerate(ds_forecast_list[0].leadtime.values):
+        filepath = figs_dir / f"tmp_{forecast_reference_time}" / f"L{i:02d}.png"
         ##--------------------------------------------------------------------.
         # Define super title
-        suptitle = "Lead time: {}".format(str(leadtime.astype("timedelta64[m]")))
-        ##--------------------------------------------------------------------.
+        suptitle = "Forecast reference time: {}, Lead time: {}".format(
+            forecast_reference_time, 
+            str(leadtime.astype("timedelta64[m]"))
+        )
         # Create figure
         fig, axs = plt.subplots(
-            len(models),
             len(variables),
-            figsize=(15, 20),
+            len(ds_forecast_list) + 1,
+            figsize=(6*(len(ds_forecast_list) + 1), 4*len(variables)),
             subplot_kw={'projection': proj4_to_cartopy(METADATA["projection"])}
         )
-        ##--------------------------------------------------------------------.
-        # Add supertitle
-        fig.suptitle(suptitle, fontsize=26, y=1.05, x=0.6)
-        ##--------------------------------------------------------------------.
-        # Set the variable title
-        for ax, var in zip(axs, variables):
-            ax.set_title(var.upper(), fontsize=24, y=1.08)
-        
-        ##--------------------------------------------------------------------.
-        # Display skill maps
-        ax_count = 0
+
+        fig.suptitle(suptitle, y=1.05)
+        ##---------------------------------------------------------------------.
+        # Initialize
         axs = axs.flatten()
-        for model in models:
-            for var in variables:
-                cbar_params = { 
-                    "shrink": 0.7, 
-                    "extend": "neither",
-                    "label": model
-                }
-                cmap_params = {"cmap": "Spectral"}
-                ax = plot_map(ds[var].sel(model=model), 
-                              ax=axs[ax_count], 
-                              geodata=geodata, 
-                              title=None, 
-                              cbar_params=cbar_params,
-                              cmap_params=cmap_params, 
-                              bbox=bbox,
-                              vmin=0,
-                              vmax=200)
+        ax_count = 0
+        ##---------------------------------------------------------------------.
+        # Plot each variable
+        for var in variables:
+            # Plot obs 
+            tmp_obs = ds_obs[var].isel(time=i)
+            im_1 = plot_map(tmp_obs,
+                          ax=axs[ax_count], 
+                          geodata=geodata, 
+                          title=None, 
+                          colorbar=False,
+                          cmap_params=cmap_params, 
+                          bbox=bbox,
+                          vmin=0,
+                          vmax=30,
+                          return_im=True)
+            axs[ax_count].set_title(None)
+            axs[ax_count].outline_patch.set_linewidth(1)
 
-                axs[ax_count].outline_patch.set_linewidth(2)
-                ax_count += 1
-    
-    ##--------------------------------------------------------------------.
-    # Figure tight layout
-    fig.tight_layout()
-    # ##--------------------------------------------------------------------.
-    # # Define figure filename
-    # if prefix != "":
-    #     prefix = prefix + "_"
-    # if suffix != "":
-    #     suffix = "_" + suffix
-    # leadtime_str = "{:02d}".format((int(leadtime / np.timedelta64(1, "m"))))
-    # fname = "comparison_" + prefix + "L" + leadtime_str + suffix + ".png"
-    # ##--------------------------------------------------------------------.
-    # # Save figure
-    # fig.savefig((figs_dir / fname), bbox_inches="tight")
-    # ##--------------------------------------------------------------------.
+            for j, ds_forecast in enumerate(ds_forecast_list):
+                tmp_pred = ds_forecast[var].isel(time=i)
+                # Plot 
+                im_forecast = plot_map(tmp_pred,
+                                ax=axs[ax_count+j+1], 
+                                geodata=geodata, 
+                                title=None, 
+                                colorbar=False,
+                                cmap_params=cmap_params, 
+                                bbox=bbox,
+                                vmin=0,
+                                vmax=30,
+                                return_im=True)
+                axs[ax_count+j+1].set_title(None)
+                axs[ax_count+j+1].outline_patch.set_linewidth(1)
+            # - Add state colorbar
+            cbar = fig.colorbar(im_forecast, ax=axs[[ax_count + j for j in range(len(ds_forecast_list) +1)]], 
+                                orientation="horizontal", 
+                                extend = 'both',
+                                aspect=aspect_cbar)       
+            cbar.set_label(var.upper())
+            cbar.ax.xaxis.set_label_position('top')
 
-    return fig
+            # Add plot labels 
+            # if ax_count == 0: 
+            axs[ax_count].set_title("Observed")   
+            for j, title in enumerate(forecast_labels): 
+                axs[ax_count+j+1].set_title(title) 
+            # Update ax_count 
+            ax_count += len(ds_forecast_list) + 1
+
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        if save_gif:
+            pil_frames.append(Image.open(filepath).convert("P", palette=Image.ADAPTIVE))
+
+    if save_gif:
+        pil_frames[0].save(
+            figs_dir / f"{forecast_reference_time}.gif",
+            format="gif",
+            save_all=True,
+            append_images=pil_frames[1:],
+            duration=1 / fps * 1000,  # ms
+            loop=False,
+        )
 
 
 def plot_skill_maps(
