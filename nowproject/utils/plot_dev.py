@@ -185,7 +185,7 @@ da_event1 = da_event1.assign_coords({"y": da_event1.y.data*1000})
 
 # x_grid, y_grid, extent, regular_grid, origin = get_geogrid(
 #    nlat, nlon, geodata=METADATA)
- 
+
 # Get colormap and color levels
 ptype = "intensity"
 units = "mm/h"
@@ -212,8 +212,65 @@ for ax in p.axes.flatten():
     # ax.set_extent(extent, crs_ref)                           
 plt.show()  
 
- 
 
- 
+da_event1 = da_event.copy()
+da_event1 = da_event1.assign_coords({"x": da_event1.x.data*1000})
+da_event1 = da_event1.assign_coords({"y": da_event1.y.data*1000})
+
+extent = (METADATA["x1"], METADATA["x2"], METADATA["y1"], METADATA["y2"])
+fig, ax = plt.subplots(
+            figsize=(8, 5),
+            subplot_kw={'projection': crs_proj}
+         )
+p = da_event1.isel(time=0).plot.imshow(
+            ax=ax,
+            transform=crs_ref,
+            cmap=cmap,
+            norm=norm, 
+            interpolation="nearest",
+            zorder=1,
+        )
+
+p.axes = _plot_map_cartopy(crs_proj, 
+                           extent=None, # To be dropped
+                           cartopy_scale="50m",
+                           drawlonlatlines = False,
+                           ax=p.axes)
+
+ax.set_extent(extent, crs_ref) 
 
 
+
+
+ptype = "intensity"
+units = "mm/h"
+colorscale = "pysteps"
+cmap, norm, _, _ = get_colormap(ptype, units, colorscale)
+crs_ref = proj4_to_cartopy(METADATA["projection"])
+crs_proj = crs_ref
+p = da_event1.plot.imshow(
+            subplot_kws={'projection': crs_proj},
+            transform=crs_ref,
+            col = "time", col_wrap=2,
+            cmap=cmap,
+            norm=norm, 
+            interpolation="nearest",
+            zorder=1,
+        )
+
+for ax in p.axes.flatten():
+    ax = _plot_map_cartopy(crs_proj, 
+                           extent=None, # To be dropped
+                           cartopy_scale="50m",
+                           drawlonlatlines = True,
+                           ax=ax)
+    ax.set_extent(extent, crs_ref)                           
+
+for i, l_ax in enumerate(p.axes):
+    for j, ax in enumerate(l_ax):
+        if i != len(p.axes) - 1:
+            ax.xaxis.set_ticks([])
+        if j != 0:
+            ax.yaxis.set_ticks([])
+
+plt.show()  

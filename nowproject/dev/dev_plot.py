@@ -889,3 +889,24 @@ da_ch = data_dynamic_ch.sel(time=slice(time_start, time_end))[["feature"]]
 figs_dir = pathlib.Path("/home/haddad/debug_figs/")
 
 plot_obs(figs_dir, da_ch, geodata=geodata, fps=6)
+
+# --------
+
+from nowproject.data.data_config import METADATA_CH
+from nowproject.utils.plot_map import plot_obs
+
+figs_dir = pathlib.Path("/home/haddad/debug_figs/")
+
+boundaries = {
+    "x": slice(485, 831),
+    "y": slice(301, 75),
+}
+data_dynamic_ch = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
+                                       boundaries=boundaries)
+
+time_start = np.datetime64('2021-06-22T16:00:00.000000000')
+time_end = np.datetime64('2021-06-22T20:00:00.000000000')
+
+da = data_dynamic_ch.sel(time=slice(time_start, time_end))[["feature"]]
+
+plot_obs(figs_dir, da, METADATA_CH, fps=6)

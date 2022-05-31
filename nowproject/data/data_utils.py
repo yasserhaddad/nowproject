@@ -13,7 +13,7 @@ def xr_sel_coords_between(data, **kwargs):
         # TODO check coord is 1 dim and exist 
         if k not in data.dims:
             raise ValueError("Argument should be a dimension of the data object.")
-        if len(data.k.shape) > 1:
+        if len(data[k].shape) > 1:
             raise ValueError("Dimension should be 1-D.")
         if slc.stop >= slc.start:
             data = data.sel({k: slc})
@@ -36,10 +36,10 @@ def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = Non
     data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
     data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
     data_dynamic = data_dynamic.where(((data_dynamic > 0.04) | data_dynamic.isnull()), 0.0)
-    if boundaries:
-        data_dynamic = xr_sel_coords_between(data_dynamic, **boundaries)
     if flip:
         data_dynamic.feature.data = data_dynamic.feature.data[:, ::-1, :]
+    if boundaries:
+        data_dynamic = xr_sel_coords_between(data_dynamic, **boundaries)
     return data_dynamic
 
 
