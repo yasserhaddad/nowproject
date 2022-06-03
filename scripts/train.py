@@ -46,7 +46,7 @@ import nowproject.architectures as dl_architectures
 from nowproject.loss import FSSLoss, WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
 from nowproject.predictions import AutoregressivePredictions
-from nowproject.utils.plot import (
+from nowproject.utils.plot_skills import (
     plot_skill_maps, 
     plot_averaged_skill,
     plot_averaged_skills, 
@@ -80,10 +80,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     data_static = load_static_topo_data(static_data_path, data_dynamic)
 
     patch_size = 128
-    data_patches = pd.read_parquet(data_dir_path / "rzc_cropped_patches.parquet")
+    data_patches = pd.read_parquet(data_dir_path / "rzc_cropped_patches_fixed.parquet")
     data_patches = data_patches.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x)).to_xarray()
     data_patches = data_patches.assign_attrs({"patch_size": patch_size})
-    # data_patches = data_patches.reindex({"time": data_dynamic.time.values}, fill_value="")
 
     data_bc = None
 
@@ -256,7 +255,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     patience = int(
         2000 / training_settings["scoring_interval"]
     )  # with 1000 and lr 0.005 crashed without AR update !
-    minimum_iterations = 8000  # wtih 8000 worked
+    minimum_iterations = 10000  # wtih 8000 worked
     minimum_improvement = 0.0001
     stopping_metric = "validation_total_loss"  # training_total_loss
     mode = "min"  # MSE best when low
@@ -462,23 +461,13 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     print(ds_cont_averaged_skill["feature"].sel(skill="RMSE").values)
     print("F1:")
     print(ds_cat_averaged_skill["feature"].sel(skill="F1").values)
-    print("csi:")
+    print("ACC:")
+    print(ds_cat_averaged_skill["feature"].sel(skill="ACC").values)
+    print("CSI:")
     print(ds_cat_averaged_skill["feature"].sel(skill="CSI").values)
+    print("FSS:")
+    print(ds_spatial_average_skill["feature"].sel(skill="FSS").values)
 
-
-    # # bbox = (451000, 30000, 850000, 319000)
-    # bbox = (470000, 60000, 835000, 300000)
-    # # - Create spatial maps
-    # plot_skill_maps(
-    #     ds_skill=ds_skill,
-    #     figs_dir=(model_dir / "figs" / "skills" / "SpatialSkill"),
-    #     geodata=METADATA,
-    #     bbox=bbox,
-    #     skills=["BIAS", "RMSE", "rSD", "pearson_R2", "error_CoV"],
-    #     variables=["feature"],
-    #     suffix="",
-    #     prefix="",
-    # )
 
     # - Create skill vs. leadtime plots
     plot_averaged_skill(ds_cont_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
@@ -491,6 +480,11 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     plot_averaged_skills(ds_cat_averaged_skill, 
                      skills=["POD", "FAR", "FA", "ACC", "CSI", "F1"], variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "averaged_categorical_skills.png"
+    )
+
+    plot_averaged_skills(ds_spatial_average_skill, 
+                     skills=["SSIM", "FSS"], variables=["feature"]).savefig(
+        model_dir / "figs" / "skills" / "averaged_spatial_skills.png"
     )
 
     plot_skills_distribution(ds_det_cont_skill, variables=["feature"]).savefig(

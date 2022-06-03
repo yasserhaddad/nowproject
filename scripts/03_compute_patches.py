@@ -90,7 +90,7 @@ if __name__ == '__main__':
             list_df.append(df)
 
     df_all = pd.concat(list_df, ignore_index=True)
-    df_all.to_parquet(data_dir_path / "rzc_cropped_patches.parquet")
+    df_all.to_parquet(data_dir_path / "rzc_cropped_patches_fixed.parquet")
 
     # df_indices = df_all.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x))
 

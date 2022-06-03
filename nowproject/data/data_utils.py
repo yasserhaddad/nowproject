@@ -4,6 +4,7 @@ from torch import tensor
 import xarray as xr
 import numpy as np
 
+from topo_descriptors import topo, helpers
 from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES
 
 def xr_sel_coords_between(data, **kwargs):
@@ -23,7 +24,27 @@ def xr_sel_coords_between(data, **kwargs):
     return data 
 
 
-def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = None, flip: bool = True):
+def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = None, 
+                         flip: bool = True, timestep: int = None) -> xr.Dataset:
+    """Prepare dynamic precipitation data, by adjusting the coordinates, cropping the data
+    and select a timestep.
+
+    Parameters
+    ----------
+    data_dynamic_path : pathlib.Path
+        Path to the dynamic data to load
+    boundaries : dict, optional
+        Boundaries to crop the data, by default None
+    flip : bool, optional
+        If true, flip the data along the y-axis, by default True
+    timestep : int, optional
+        If specified, time spacing between each value of the data, by default None
+
+    Returns
+    -------
+    xr.Dataset
+        Preprocessed dynamic precipitation data
+    """
     data_dynamic = xr.open_zarr(data_dynamic_path)
     rzc_shape = data_dynamic.isel(time=0).precip.data.shape
     x = np.arange(BOTTOM_LEFT_COORDINATES[0], BOTTOM_LEFT_COORDINATES[0] + rzc_shape[1]) + 0.5
@@ -33,6 +54,8 @@ def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = Non
         ["radar_names", "radar_quality", "radar_availability"], 
         drop=True
         )
+    if timestep and timestep == 5:
+        data_dynamic = data_dynamic.sel(time=(data_dynamic.time.dt.minute % timestep == 0))
     data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
     data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
     data_dynamic = data_dynamic.where(((data_dynamic > 0.04) | data_dynamic.isnull()), 0.0)
@@ -44,7 +67,8 @@ def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = Non
 
 
 def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset, 
-                          upsample: bool = True, upsample_factor: int = 13) -> xr.Dataset:
+                          upsample: bool = True, upsample_factor: int = 13, 
+                          tpi: bool = False, scale_tpi: int = None) -> xr.Dataset:
     """Loads topographic data and resamples it to match the dynamic data loaded for training.
 
     Parameters
@@ -57,6 +81,10 @@ def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset
         If true, upsample the topographic data by the upsample_factor
     upsample_factor : int
         Upsampling factor
+    tpi : bool
+        If true, compute the topographical position index
+    scale_tpi : int
+        Scale in meters to compute the topographical position index
 
     Returns
     -------
@@ -66,30 +94,52 @@ def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset
     dem = xr.open_rasterio(topo_data_path)
     dem = dem.isel(band=0, drop=True)
 
-    if upsample:
+    if upsample and not tpi:
         dem = dem.coarsen({"x": upsample_factor, "y": upsample_factor}, boundary="trim").mean()
+    
+    if tpi and not upsample:
+        if not scale_tpi:
+            raise ValueError("To compute the tpi, please specify the scale_tpi argument.")
+        
+        scale_pixel, __ = helpers.scale_to_pixel(scale_tpi, dem)
+        dem = topo.tpi(dem, scale_pixel)
 
     dem["x"] = dem["x"] / 1000
     dem["y"] = dem["y"] / 1000
     dem = dem.interp(coords={"x": data_dynamic.x.values, "y": data_dynamic.y.values})
-    
 
     return dem.to_dataset(name="feature")
 
 
-def get_tensor_info_with_patches(tensor_info, patch_size):
+def get_tensor_info_with_patches(tensor_info, patch_size=None):
+    """Modify the tensor info dictionary to include patch size, or not,
+    in the training phase
+
+    Parameters
+    ----------
+    tensor_info : dict
+        Tensor information dictionary
+    patch_size : int, optional
+        Size of the patches to pass for training, by default None
+
+    Returns
+    -------
+    dict
+        Modified tensor info, with a train and test entry for both dynamic
+    and static data.
+    """
     test_input_info = copy.deepcopy(tensor_info["input_shape_info"])
     test_output_info = copy.deepcopy(tensor_info["output_shape_info"])
 
     train_input_info = copy.deepcopy(tensor_info["input_shape_info"])
-    train_input_info["dynamic"]["y"] = patch_size
-    train_input_info["dynamic"]["x"] = patch_size
-    train_input_info["static"]["y"] = patch_size
-    train_input_info["static"]["x"] = patch_size
+    train_input_info["dynamic"]["y"] = patch_size if patch_size else train_input_info["dynamic"]["y"]
+    train_input_info["dynamic"]["x"] = patch_size if patch_size else train_input_info["dynamic"]["x"]
+    train_input_info["static"]["y"] = patch_size if patch_size else train_input_info["static"]["y"]
+    train_input_info["static"]["x"] = patch_size if patch_size else train_input_info["static"]["x"]
 
     train_output_info = copy.deepcopy(tensor_info["output_shape_info"])
-    train_output_info["dynamic"]["y"] = patch_size
-    train_output_info["dynamic"]["x"] = patch_size
+    train_output_info["dynamic"]["y"] = patch_size if patch_size else train_output_info["dynamic"]["y"]
+    train_output_info["dynamic"]["x"] = patch_size if patch_size else train_output_info["dynamic"]["x"]
 
     tensor_info["input_shape_info"] = {
         "train": train_input_info,
