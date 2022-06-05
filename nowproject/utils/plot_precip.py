@@ -1,10 +1,13 @@
 from re import M
 from typing import Tuple, Union
+import matplotlib
 import pyproj
 import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+from matplotlib.axes import Axes
+from matplotlib.colors import Normalize, Colormap
+from matplotlib.image import AxesImage
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -19,40 +22,39 @@ PRECIP_VALID_UNITS = ("mm/h", "mm", "dBZ")
 
 
 def _plot_map_cartopy(
-    crs,
-    figsize=(8, 5),
-    cartopy_scale="50m",
-    ax=None,
-    drawlonlatlines=False,
-    drawlonlatlabels=True,
-    lw=0.5
+    crs: ccrs.Projection,
+    figsize: tuple = (8, 5),
+    cartopy_scale: str = "50m",
+    ax: Axes = None,
+    drawlonlatlines: bool = False,
+    drawlonlatlabels: bool = True,
+    lw: float = 0.5
 ):
-    """
-    Plot coastlines, countries, rivers and meridians/parallels using cartopy.
-    .. _SubplotSpec: https://matplotlib.org/api/_as_gen/matplotlib.gridspec.SubplotSpec.html
+    """Plot coastlines, countries, rivers and meridians/parallels using cartopy.
+
     Parameters
     ----------
-    crs: object
+    crs : ccrs.Projection
         Instance of a crs class defined in cartopy.crs.
         It can be created using utils.proj4_to_cartopy.
-    extent: scalars (left, right, bottom, top)
-        The coordinates of the bounding box.
-    drawlonlatlines: bool
-        Whether to plot longitudes and latitudes.
-    drawlonlatlabels: bool, optional
-        If set to True, draw longitude and latitude labels. Valid only if
-        'drawlonlatlines' is True.
-    cartopy_scale: {'10m', '50m', '110m'}
+    figsize : tuple, optional
+        Figure size if ax is not specified, by default (8, 5)
+    cartopy_scale : str, optional
         The scale (resolution) of the map. The available options are '10m',
-        '50m', and '110m'.
-    lw: float
-        Line width.
-    subplot: tuple of int (nrows, ncols, index) or SubplotSpec_ instance, optional
-        The subplot where to place the basemap.
-        By the default, the basemap will replace the current axis.
+        '50m', and '110m', by default "50m"
+    ax : Axes, optional
+        Axes object to plot the map on, by default None
+    drawlonlatlines : bool, optional
+        If true, plot longitudes and latitudes, by default False
+    drawlonlatlabels : bool, optional
+        If true, draw longitude and latitude labels. Valid only if
+        'drawlonlatlines' is true, by default True
+    lw : float, optional
+        Line width, by default 0.5
+
     Returns
     -------
-    ax: axes
+    Axes
         Cartopy axes. Compatible with matplotlib.
     """
     if not ax:
@@ -159,18 +161,75 @@ def _plot_map_cartopy(
     return ax
 
 
-def plot_single_precip(da: xr.DataArray, geodata: dict, ptype="intensity", units="mm/h", 
-                       colorscale="pysteps", figsize=(8,5), title: str = None, 
+def plot_single_precip(da: xr.DataArray, geodata: dict, ax: Axes = None, ptype="intensity", 
+                       units="mm/h", colorscale="pysteps", figsize=(8,5), title: str = None, 
                        colorbar: bool = True, drawlonlatlines: bool = False, 
-                       extent: Tuple[Union[int,float]] = None, probthr: float = None):
-    cmap, norm, clevs, clevs_str = get_colormap(ptype, units, colorscale)
+                       extent: Tuple[Union[int,float]] = None, probthr: float = None,
+                       norm: Normalize = None, 
+                       cmap: Union[Colormap, str] = None) -> Tuple[GeoAxesSubplot, AxesImage]:
+    """Plot a single precipitation event (one timestep).
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        DataArray containing the data to plot, with two
+        spatial dimensions (y-x, lat-lon)
+    geodata : dict
+        Metadata containing at least the projection, the 
+        corners of the plot ('x1', 'y1', 'x2', 'y2') and 
+        'yorigin'
+    ax : Axes, optional
+        Axes object to plot the map on, by default None
+    ptype : str, optional
+        Type of the map to plot. Options : {'intensity', 
+        'depth', 'prob'}, by default "intensity"
+    units : str, optional
+        Units of the input array. Options : {'mm/h', 
+        'mm', 'dBZ'}, by default "mm/h"
+    colorscale : str, optional
+        Colorscale to use. Options : {'pysteps', 'STEPS-BE', 
+        'BOM-RF3'}, by default "pysteps"
+    figsize : tuple, optional
+        Figure size if ax is not specified, by default (8,5)
+    title : str, optional
+        If not None, print the title on top of the plot, 
+        by default None
+    colorbar : bool, optional
+        If true, add colorbar on the right side of the plot, 
+        by default True
+    drawlonlatlines : bool, optional
+        If true, plot longitudes and latitudes, by default False
+    extent : Tuple[Union[int,float]], optional
+        bounding box in data coordinates that the image will fill, 
+        by default None
+    probthr : float, optional
+        Intensity threshold to show in the color bar of the 
+        exceedance probability map. Required if ptype is “prob” 
+        and colorbar is True, by default None
+    norm : Normalize, optional
+        Normalize instance used to scale scalar data to the [0, 1] 
+        range before mapping to colors using cmap, by default None
+    cmap : Union[Colormap, str], optional
+        Colormap instance or registered colormap name used to map 
+        scalar data to colors, by default None
+
+    Returns
+    -------
+    Tuple[GeoAxesSubplot, AxesImage] 
+        The subplot 
+    """
+    if not cmap and not norm:
+        cmap, norm, clevs, clevs_str = get_colormap(ptype, units, colorscale)
+    else:
+        clevs, clevs_str = None, None
     crs_ref = proj4_to_cartopy(geodata["projection"])
     crs_proj = crs_ref
-
-    _, ax = plt.subplots(
-            figsize=figsize,
-            subplot_kw={'projection': crs_proj}
-        )
+    
+    if ax is None:
+        _, ax = plt.subplots(
+                figsize=figsize,
+                subplot_kw={'projection': crs_proj}
+            )
 
     cbar_kwargs = {
         "ticks": clevs,
@@ -186,7 +245,7 @@ def plot_single_precip(da: xr.DataArray, geodata: dict, ptype="intensity", units
         norm=norm, 
         interpolation="nearest",
         add_colorbar=colorbar,
-        cbar_kwargs=cbar_kwargs,
+        cbar_kwargs=cbar_kwargs if colorbar else None,
         zorder=1,
     )
 
@@ -211,7 +270,7 @@ def plot_single_precip(da: xr.DataArray, geodata: dict, ptype="intensity", units
     if extent:
         p.axes.set_extent(extent, crs_ref)
 
-    return ax
+    return ax, p
 
 
 def plot_multifaceted_grid_precip(da: xr.DataArray, geodata: dict, col: str, col_wrap: int,

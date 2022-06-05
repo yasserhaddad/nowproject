@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from pathlib import Path
-
+import time
 from nowproject.data.data_utils import prepare_data_dynamic
 from dask.distributed import Client
 from dask.diagnostics import ProgressBar
@@ -22,9 +22,10 @@ if __name__ == '__main__':
                                         boundaries=boundaries)
 
     print("Computing value counts...")
+    t_i = time.time()
     results = xr.apply_ufunc(get_unique_counts, 
                              data_dynamic.feature,
-                             input_core_dims=[["y", "x"]],
+                             input_core_dims=[["x", "y"]],
                              output_core_dims=[["info"]], 
                              dask="parallelized",
                              vectorize=True,
@@ -45,18 +46,45 @@ if __name__ == '__main__':
     counts = pd.DataFrame.from_dict(combined, orient="index").reset_index()
     counts.columns = ["value", "count"]
     counts.to_csv(data_stats_dir_path / "counts_values.csv", index=False)
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
+    print("Computing quantiles...")
+    t_i = time.time()
+    data_dynamic.quantile([0.75, 0.8, 0.9, 0.95, 0.98, 0.99]).to_netcdf(data_stats_dir_path / "quantiles.nc")
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
 
     print("Computing grid cell statistics...")
+    t_i = time.time()
     mean_space = data_dynamic.mean(dim="time").rename({"feature": "mean"}).compute()
     max_space = data_dynamic.max(dim="time").rename({"feature": "max"}).compute()
     xr.merge([mean_space, max_space]).to_netcdf(data_stats_dir_path / "stats_space.nc")
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
 
     print("Computing monthly grid cell statistics...")
+    t_i = time.time()
     mean_space_month = data_dynamic.groupby("time.month").mean(dim="time")\
                                    .rename({"feature": "mean"}).compute()
     max_space_month = data_dynamic.groupby("time.month").max(dim="time")\
                                   .rename({"feature": "max"}).compute()
     xr.merge([mean_space_month, max_space_month]).to_netcdf(data_stats_dir_path / "stats_space_month.nc")
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
+
+    print("Computing monthly grid cell statistics...")
+    t_i = time.time()
+    mean_space_month = data_dynamic.groupby("time.year").mean(dim="time")\
+                                   .rename({"feature": "mean"}).compute()
+    max_space_month = data_dynamic.groupby("time.year").max(dim="time")\
+                                  .rename({"feature": "max"}).compute()
+    xr.merge([mean_space_month, max_space_month]).to_netcdf(data_stats_dir_path / "stats_space_month.nc")
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
 
 
 

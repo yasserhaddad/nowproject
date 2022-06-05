@@ -6,15 +6,6 @@ Created on Thu Feb 18 22:05:51 2021
 @author: ghiggi
 """
 import numpy as np
-from collections.abc import Iterable
-
-
-def check_pool_method(pool_method):
-    """Check valid pooling method."""
-    # ('interp', 'maxval', 'maxarea', 'learn')  graph
-    pool_method = pool_method.lower()
-    return pool_method
-
 
 def check_skip_connection(skip_connection):
     """Check skip connection type."""

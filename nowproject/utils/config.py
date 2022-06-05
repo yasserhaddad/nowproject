@@ -39,12 +39,14 @@ def get_default_model_settings():
         "model_name_suffix": None,
         # Architecture options
         # - ConvBlock options
+        "conv_type": "regular",
         "kernel_size_conv": 3,
         "bias": True,
         "batch_norm": False,
         "batch_norm_before_activation": False,
         "activation": True,
         "activation_fun": "relu",
+        "last_layer_activation": False,
         # - Pooling options
         "pool_method": "Max",
         "kernel_size_pooling": 4,  # half the resolution
@@ -163,9 +165,6 @@ def get_model_settings(cfg):
     # Retrieve mandatory and optional keys
     mandatory_keys = [
         "architecture_name",
-        # "sampling",
-        # "sampling_kwargs",
-        # "sampling_name",
     ]
     optional_keys = list(default_model_settings.keys())
 
@@ -173,11 +172,6 @@ def get_model_settings(cfg):
     model_settings["architecture_name"] = cfg["model_settings"].get(
         "architecture_name", None
     )
-    # model_settings["sampling"] = cfg["model_settings"].get("sampling", None)
-    # model_settings["sampling_kwargs"] = cfg["model_settings"].get(
-    #     "sampling_kwargs", None
-    # )
-    # model_settings["sampling_name"] = cfg["model_settings"].get("sampling_name", None)
 
     # Stop if some mandatory keys are missing
     flag_error = False
@@ -630,5 +624,3 @@ def create_test_events_time_range(fpath, freq="2min30s"):
     with open(fpath, "r", encoding="utf-8") as f:
         event_dicts = json.load(f)
         return [create_event_time_range(d, freq=freq) for d in event_dicts]
-
-

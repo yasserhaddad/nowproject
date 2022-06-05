@@ -854,8 +854,8 @@ data_dynamic_ch = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_ch
                                        boundaries=boundaries)
 
 data_dynamic_ch = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
-data_dynamic_ch = data_dynamic_ch.sel(x=slice(485, 831))
-data_dynamic_ch = data_dynamic_ch.sel(y=np.arange(301, 75, -1))
+# data_dynamic_ch = data_dynamic_ch.sel(x=slice(485, 831))
+# data_dynamic_ch = data_dynamic_ch.sel(y=np.arange(301, 75, -1))
 
 
 def xr_sel_coords_between(data, **kwargs):
@@ -895,7 +895,7 @@ plot_obs(figs_dir, da_ch, geodata=geodata, fps=6)
 from nowproject.data.data_config import METADATA_CH
 from nowproject.utils.plot_map import plot_obs
 
-figs_dir = pathlib.Path("/home/haddad/debug_figs/")
+figs_dir = pathlib.Path("/home/haddad/adri_figs/")
 
 boundaries = {
     "x": slice(485, 831),

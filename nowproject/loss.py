@@ -12,16 +12,6 @@ import matplotlib.pyplot as plt
 # https://torchmetrics.readthedocs.io/en/latest/pages/implement.html#implement
 # https://torchmetrics.readthedocs.io/en/latest/references/functional.html#r2-score-func
 
-## feature last dimension:
-# - compute per feature
-# - torchmetrics multiouput: uniform/variance weighted average across variables or raw ...
-
-
-# def metrics(loss, list_metrics, reshape_fun)
-#     YPRED YOBS = reshape_fun(YPRED YOBS)
-#     YPRED YOBS = reshape_fun(YPRED YOBS)
-#     LOSS(pred,obs)
-#     metrics(prd,obs)
 
 # ------------------------------------------------------------------------------.
 ##########################
@@ -75,8 +65,9 @@ class WeightedMSELoss(nn.MSELoss):
 
     def forward(self, label, pred):
         if self.weighted_mse_reduction == "mean_masked":
-            mask = label > self.zero_value
-            pred = torch.where(mask, pred, torch.tensor(float(self.zero_value)).to(pred.device)) 
+            mask = torch.logical_or(label > self.zero_value, pred > self.zero_value)
+            pred = torch.where(mask, pred, 
+                               torch.tensor(float(self.zero_value)).to(pred.device)) 
         mse = super(WeightedMSELoss, self).forward(pred, label)
         weights = self.weights
         n_batch, n_y, n_x, n_val = mse.shape
