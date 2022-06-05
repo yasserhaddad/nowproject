@@ -146,4 +146,4 @@ if __name__ == "__main__":
             print("CSI:")
             print(ds_cat_averaged_skill["feature"].sel(skill="CSI").values)
             print("FSS:")
-            print(ds_spatial_average_skill["feature"].sel(skill="F1").values)
+            print(ds_spatial_average_skill["feature"].sel(skill="FSS").values)
