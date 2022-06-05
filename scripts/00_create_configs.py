@@ -17,7 +17,7 @@ config_path = pathlib.Path("/home/haddad/nowproject/configs")
 cfg = get_default_settings()
 
 # Current experiment
-cfg["ar_settings"]["input_k"] = [-5, -4, -3, -2, -1]
+cfg["ar_settings"]["input_k"] = [-4, -3, -2, -1]
 cfg["ar_settings"]["output_k"] = [0]
 cfg["ar_settings"]["forecast_cycle"] = 1
 cfg["ar_settings"]["ar_iterations"] = 6
@@ -65,7 +65,7 @@ pool_methods = ["Max", "Avg"]
 
 for architecture_name in architecture_names:
     for pool_method in pool_methods:
-        custom_cfg = cfg
+        custom_cfg = cfg.copy()
         custom_cfg["model_settings"]["architecture_name"] = architecture_name
         custom_cfg["model_settings"]["pool_method"] = pool_method
         custom_cfg["model_settings"]["kernel_size_conv"] = kernel_size_conv

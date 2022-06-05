@@ -286,8 +286,7 @@ def plot_forecast_comparison(figs_dir: pathlib.Path,
                                 spacing="uniform",
                                 orientation="horizontal", 
                                 extend = 'both',
-                                aspect=aspect_cbar)      
-            # cbar.ax.set_yticklabels(clevs_str) 
+                                aspect=aspect_cbar)       
             cbar.set_label("Precipitation intensity (mm/h)")
             cbar.ax.xaxis.set_label_position('top')
 

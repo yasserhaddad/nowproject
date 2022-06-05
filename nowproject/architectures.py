@@ -10,11 +10,9 @@ from torch.nn import (
     Sequential
 )
 import torch.nn.functional as F
-import torchvision
 
 from nowproject.layers import ConvBlock, ResBlock, Upsampling
 from nowproject.models import UNetModel, ConvNetModel
-from nowproject.utils.utils_models import check_pool_method
 from nowproject.utils.utils_models import check_skip_connection
 
 
@@ -118,7 +116,7 @@ class UNet(UNetModel, torch.nn.Module):
 
         ##--------------------------------------------------------------------.
         ### Check arguments
-        pool_method = check_pool_method(pool_method)
+        pool_method = pool_method.lower()
         skip_connection = check_skip_connection(skip_connection)
 
         ##--------------------------------------------------------------------.

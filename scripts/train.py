@@ -46,13 +46,16 @@ import nowproject.architectures as dl_architectures
 from nowproject.loss import FSSLoss, WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
 from nowproject.predictions import AutoregressivePredictions
-from nowproject.utils.plot_skills import (
-    plot_skill_maps, 
+from nowproject.utils.plot_skills import ( 
     plot_averaged_skill,
     plot_averaged_skills, 
     plot_skills_distribution
 )
-from nowproject.utils.scalers import RainScaler, RainBinScaler, LogScaler, dBScaler
+from nowproject.utils.scalers import (
+    Scaler,
+    log_normalize_inverse_transform,
+    log_normalize_transform,
+)
 from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
 from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, get_tensor_info_with_patches
 
@@ -70,13 +73,14 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     training_settings = get_training_settings(cfg)
     dataloader_settings = get_dataloader_settings(cfg)
 
-    model_settings["conv_type"] = "spectral"
+    model_settings["conv_type"] = "regular"
 
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
-                                        boundaries=boundaries)
+                                        boundaries=boundaries, 
+                                        timestep=5)
     data_static = load_static_topo_data(static_data_path, data_dynamic)
 
     patch_size = 128
@@ -88,10 +92,14 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     ##------------------------------------------------------------------------.
     # Load scalers
-    scaler = RainScaler(feature_min=np.log10(0.025), 
-                        feature_max=np.log10(100), 
-                        threshold=np.log10(0.1))
-    model_settings["last_layer_activation"] = False
+    transform_kwargs = dict(feature_min=np.log10(0.025), 
+                            feature_max=np.log10(100), 
+                            threshold=np.log10(0.1))
+    scaler = Scaler(log_normalize_transform, 
+                    log_normalize_inverse_transform, 
+                    transform_kwargs=transform_kwargs,
+                    inverse_transform_kwargs=transform_kwargs)
+    model_settings["last_layer_activation"] = True
     
     # bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
 
@@ -107,11 +115,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
-    # training_years = np.array(["2018-05-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
-    # validation_years = np.array(["2021-01-01T00:00", "2021-12-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-10-01T00:00", "2018-11-30T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-01-20T23:57:30"], dtype="M8[s]")
-    test_events = create_test_events_time_range(test_events_path)[:3]
+    training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
+    test_events = create_test_events_time_range(test_events_path, freq="5min")
 
     # - Split data sets
     t_i = time.time()
@@ -199,7 +205,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         cfg["model_settings"]["model_name_suffix"] = None
 
     model_dir = create_experiment_directories(
-        exp_dir=exp_dir_path, model_name=model_name, suffix=f"Patches-LogNormalizeScaler-MSE-Spectral-{training_settings['epochs']}epochs", force=force
+        exp_dir=exp_dir_path, model_name=model_name, 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSE-{training_settings['epochs']}epochs-1year", 
+        force=force
     )  # force=True will delete existing directory
 
     # Define model weights filepath
@@ -213,7 +221,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define custom loss function
     # --> TODO: For masking we could simply set weights to 0 !!!
     # criterion = WeightedMSELoss(weights=weights)
-    criterion = WeightedMSELoss(reduction="mean")
+    criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = FSSLoss(mask_size=3)
 
     ##------------------------------------------------------------------------.
@@ -365,7 +373,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         output_k=ar_settings["output_k"],
         forecast_cycle=ar_settings["forecast_cycle"],
         stack_most_recent_prediction=ar_settings["stack_most_recent_prediction"],
-        ar_iterations=20,  # How many time to autoregressive iterate
+        ar_iterations=11,  # How many time to autoregressive iterate
         # Save options
         zarr_fpath=forecast_zarr_fpath.as_posix(),  # None --> do not write to disk
         rounding=2,  # Default None. Accept also a dictionary
@@ -508,7 +516,7 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
     default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
-    default_test_events = "/home/haddad/nowproject/configs/events.json"
+    default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
     parser = argparse.ArgumentParser(
         description="Training a numerical precipation nowcasting emulator"

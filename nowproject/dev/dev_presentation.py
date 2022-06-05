@@ -12,7 +12,7 @@ from nowproject.data.data_config import METADATA_CH
 from nowproject.utils.plot_precip import plot_single_precip, _plot_map_cartopy
 from nowproject.utils.plot_map import plot_forecast_comparison
 
-from nowproject.utils.plot import (
+from nowproject.utils.plot_skills import (
     plot_averaged_skill,
     plot_averaged_skills, 
     plot_comparison_averaged_skills
