@@ -63,8 +63,9 @@ from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynam
 default_data_dir = "/ltenas3/0_Data/NowProject/"
 default_static_data_path = "/ltenas3/0_GIS/DEM Switzerland/srtm_Switzerland_EPSG21781.tif"
 default_exp_dir = "/home/haddad/experiments/"
-default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
-default_test_events = "/home/haddad/nowproject/configs/events.json"
+# default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
+default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
+default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
 cfg_path = Path(default_config)
 data_dir_path  = Path(default_data_dir)

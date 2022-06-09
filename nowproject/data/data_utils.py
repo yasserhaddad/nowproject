@@ -1,6 +1,6 @@
 import copy
 import pathlib
-from torch import tensor
+import pandas as pd
 import xarray as xr
 import numpy as np
 
@@ -64,6 +64,16 @@ def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = Non
     if boundaries:
         data_dynamic = xr_sel_coords_between(data_dynamic, **boundaries)
     return data_dynamic
+
+
+def prepare_data_patches(data_patches_path: pathlib.Path, patch_size: int, timestep: int = None) -> xr.DataArray:
+    data_patches = pd.read_parquet(data_patches_path)
+    data_patches = data_patches.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x)).to_xarray()
+    if timestep:
+        data_patches = data_patches[data_patches.time.dt.minute % timestep == 0]
+    data_patches = data_patches.assign_attrs({"patch_size": patch_size})
+
+    return data_patches
 
 
 def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset, 
@@ -134,8 +144,9 @@ def get_tensor_info_with_patches(tensor_info, patch_size=None):
     train_input_info = copy.deepcopy(tensor_info["input_shape_info"])
     train_input_info["dynamic"]["y"] = patch_size if patch_size else train_input_info["dynamic"]["y"]
     train_input_info["dynamic"]["x"] = patch_size if patch_size else train_input_info["dynamic"]["x"]
-    train_input_info["static"]["y"] = patch_size if patch_size else train_input_info["static"]["y"]
-    train_input_info["static"]["x"] = patch_size if patch_size else train_input_info["static"]["x"]
+    if train_input_info["static"]:
+        train_input_info["static"]["y"] = patch_size if patch_size else train_input_info["static"]["y"]
+        train_input_info["static"]["x"] = patch_size if patch_size else train_input_info["static"]["x"]
 
     train_output_info = copy.deepcopy(tensor_info["output_shape_info"])
     train_output_info["dynamic"]["y"] = patch_size if patch_size else train_output_info["dynamic"]["y"]

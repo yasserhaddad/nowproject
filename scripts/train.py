@@ -43,7 +43,12 @@ from xverif import xverif
 # Project specific functions
 from torch import nn
 import nowproject.architectures as dl_architectures
-from nowproject.loss import FSSLoss, WeightedMSELoss, reshape_tensors_4_loss
+from nowproject.loss import (
+    FSSLoss,
+    CombinedFSSLoss, 
+    WeightedMSELoss, 
+    reshape_tensors_4_loss
+)
 from nowproject.training import AutoregressiveTraining
 from nowproject.predictions import AutoregressivePredictions
 from nowproject.utils.plot_skills import ( 
@@ -51,13 +56,23 @@ from nowproject.utils.plot_skills import (
     plot_averaged_skills, 
     plot_skills_distribution
 )
+from nowproject.utils.plot_map import (
+    plot_forecast_comparison
+)
+from nowproject.data.data_config import METADATA_CH
+
 from nowproject.utils.scalers import (
     Scaler,
     log_normalize_inverse_transform,
     log_normalize_transform,
 )
 from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
-from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, get_tensor_info_with_patches
+from nowproject.data.data_utils import (
+    load_static_topo_data, 
+    prepare_data_dynamic,
+    prepare_data_patches, 
+    get_tensor_info_with_patches
+)
 
 def main(cfg_path, data_dir_path, static_data_path, test_events_path, 
          exp_dir_path, force=False):
@@ -73,7 +88,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     training_settings = get_training_settings(cfg)
     dataloader_settings = get_dataloader_settings(cfg)
 
-    model_settings["conv_type"] = "regular"
+    # model_settings["conv_type"] = "regular"
 
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
@@ -81,13 +96,13 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries, 
                                         timestep=5)
-    data_static = load_static_topo_data(static_data_path, data_dynamic)
+    # data_static = load_static_topo_data(static_data_path, data_dynamic)
+    data_static = None
 
     patch_size = 128
-    data_patches = pd.read_parquet(data_dir_path / "rzc_cropped_patches_fixed.parquet")
-    data_patches = data_patches.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x)).to_xarray()
-    data_patches = data_patches.assign_attrs({"patch_size": patch_size})
-
+    data_patches = prepare_data_patches(data_dir_path / "rzc_cropped_patches_fixed.parquet",
+                                        patch_size=patch_size,
+                                        timestep=5)
     data_bc = None
 
     ##------------------------------------------------------------------------.
@@ -99,7 +114,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
                     log_normalize_inverse_transform, 
                     transform_kwargs=transform_kwargs,
                     inverse_transform_kwargs=transform_kwargs)
-    model_settings["last_layer_activation"] = True
+    model_settings["last_layer_activation"] = False
     
     # bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
 
@@ -115,8 +130,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
-    training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
+    # training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
+    # validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
+    training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
     test_events = create_test_events_time_range(test_events_path, freq="5min")
 
     # - Split data sets
@@ -206,7 +223,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSE-{training_settings['epochs']}epochs-1year", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-6months", 
         force=force
     )  # force=True will delete existing directory
 
@@ -221,8 +238,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define custom loss function
     # --> TODO: For masking we could simply set weights to 0 !!!
     # criterion = WeightedMSELoss(weights=weights)
+    # criterion = WeightedMSELoss(reduction="mean_masked")
     criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = FSSLoss(mask_size=3)
+    # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
 
     ##------------------------------------------------------------------------.
     # - Define optimizer
@@ -337,7 +356,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ### Create plots related to training evolution
     print("========================================================================================")
     print("- Creating plots to investigate training evolution")
-    ar_training_info.plots(model_dir=model_dir, ylim=(0, 1.0))
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.08))
 
     ##-------------------------------------------------------------------------.
     ### - Create predictions
@@ -499,6 +518,28 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         model_dir / "figs" / "skills" / "skills_distribution.png",
     )
 
+    ##------------------------------------------------------------------------.
+    ### - Create animations for some forecast 
+    print("========================================================================================")
+    print("- Create forecast animations")
+    t_i = time.time()
+    timesteps = [
+        "2016-04-16 18:00:00",
+        "2017-01-12 17:00:00",
+        "2017-01-31 16:00:00",
+        "2017-06-14 16:00:00",
+        "2017-07-07 18:00:00",
+        "2017-08-31 17:00:00"
+    ]
+    for timestep in timesteps:
+        ds_forecast_event = ds_forecasts.sel(forecast_reference_time=np.datetime64(timestep))
+        plot_forecast_comparison(model_dir / "figs" / "forecast_animations", 
+                                 ds_forecast_event,
+                                 data_dynamic,
+                                 geodata=METADATA_CH,
+                                 suptitle_prefix="resConv64, Increment Learning, ")
+
+    print("   ---> Elapsed time: {:.1f} minutes ".format((time.time() - t_i) / 60))
     ##-------------------------------------------------------------------------.
     print("========================================================================================")
     print(
@@ -514,8 +555,11 @@ if __name__ == "__main__":
     default_static_data_path = "/ltenas3/0_GIS/DEM Switzerland/srtm_Switzerland_EPSG21781.tif"
     default_exp_dir = "/home/haddad/experiments/"
     # default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
-    default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
+    # default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
+    # default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
+    default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
+
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
     parser = argparse.ArgumentParser(

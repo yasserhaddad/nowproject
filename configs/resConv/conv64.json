@@ -2,18 +2,11 @@
     "model_settings": {
         "pretrained_model_name": null,
         "model_name_prefix": null,
-        "model_name": null,
+        "model_name": "RNN-AR6-resConv64-IncrementLearning",
         "model_name_suffix": null,
-        "kernel_size_conv": 3,
-        "bias": true,
-        "batch_norm": false,
-        "batch_norm_before_activation": false,
-        "activation": true,
-        "activation_fun": "relu",
-        "pool_method": "Avg",
-        "kernel_size_pooling": 4,
-        "padding": "True",
-        "architecture_name": "ResNet"
+        "n_filter": 64,
+        "increment_learning": "True",
+        "architecture_name": "resConv"
     },
     "dataloader_settings": {
         "random_shuffling": true,
@@ -26,9 +19,9 @@
         "autotune_num_workers": false
     },
     "training_settings": {
-        "epochs": 15,
+        "epochs": 4,
         "ar_training_strategy": "RNN",
-        "learning_rate": 0.007,
+        "learning_rate": 0.001,
         "training_batch_size": 16,
         "validation_batch_size": 16,
         "scoring_interval": 30,
@@ -46,7 +39,6 @@
     },
     "ar_settings": {
         "input_k": [
-            -5,
             -4,
             -3,
             -2,

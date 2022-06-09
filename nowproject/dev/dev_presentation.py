@@ -25,7 +25,8 @@ data_dir_path = Path("/ltenas3/0_Data/NowProject/")
 figs_dir_path = Path("/home/haddad/presentation_figs/")
 
 
-data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr")
+data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr",
+                                    timestep=5)
 
 time_1 = np.datetime64('2021-06-28T15:30:00.000000000')
 time_2 = np.datetime64('2021-06-22T17:40:00.000000000')
@@ -116,13 +117,20 @@ p.axes = _plot_map_cartopy(crs_proj,
 plt.savefig(figs_dir_path / "topographic_map.png", dpi=300, bbox_inches='tight')
 
 
-# Benchmark
+# Test event 1
 timestep = np.datetime64("2016-04-16 18:00:00")
-benchmark_dir_path = data_dir_path / "benchmarks"
+benchmark_dir_path = data_dir_path / "benchmarks" / "5min"
 test_event_dir = benchmark_dir_path / "test_event_0"
-ds_forecast_benchmark1 = xr.open_zarr(test_event_dir / "benchmark_test_event_0.zarr")
+ds_forecast_benchmark = xr.open_zarr(test_event_dir / "benchmark_test_event_0.zarr")
 
-ds_forecast = ds_forecast_benchmark1.sel(forecast_reference_time=timestep)\
+# Test event 2
+timestep = np.datetime64("2017-01-12 18:00:00")
+benchmark_dir_path = data_dir_path / "benchmarks" / "5min"
+test_event_dir = benchmark_dir_path / "test_event_1"
+ds_forecast_benchmark = xr.open_zarr(test_event_dir / "benchmark_test_event_1.zarr")
+
+## SPROG and STEPS
+ds_forecast = ds_forecast_benchmark.sel(forecast_reference_time=timestep)\
                                     .rename({"sprog": "feature"})[["feature"]]
 
 plot_forecast_comparison(figs_dir_path / "benchmark_sprog", 
@@ -131,17 +139,42 @@ plot_forecast_comparison(figs_dir_path / "benchmark_sprog",
                                geodata=METADATA_CH,
                                suptitle_prefix="S-PROG, ")
 
-ds_forecast = ds_forecast_benchmark1.sel(forecast_reference_time=timestep)\
-                                    .rename({"steps": "feature"})[["feature"]]
+ds_forecast = ds_forecast_benchmark.sel(forecast_reference_time=timestep)\
+                                    .rename({"steps_mean": "feature"})[["feature"]]
 
-plot_forecast_comparison(figs_dir_path / "benchmark_steps", 
+plot_forecast_comparison(figs_dir_path / "benchmark_steps_mean", 
                                ds_forecast,
                                data_dynamic_ch,
                                geodata=METADATA_CH,
-                               suptitle_prefix="STEPS, ")
+                               suptitle_prefix="STEPS Mean, ")
+
+ds_forecast = ds_forecast_benchmark.sel(forecast_reference_time=timestep)\
+                                    .rename({"steps_median": "feature"})[["feature"]]
+
+plot_forecast_comparison(figs_dir_path / "benchmark_steps_median", 
+                               ds_forecast,
+                               data_dynamic_ch,
+                               geodata=METADATA_CH,
+                               suptitle_prefix="STEPS Median, ")
+
+## Model
+model_dir = Path("/home/haddad/experiments/RNN-AR6-resConv-MaxPooling-5mins-Patches-LogNormalizeScaler-MSEMasked-4epochs-6months/")
+forecast_zarr_fpath = (
+        model_dir / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+    )
+ds_forecast_model = xr.open_zarr(forecast_zarr_fpath)
+
+ds_forecast_model_event = ds_forecast_model.sel(forecast_reference_time=timestep)
+
+plot_forecast_comparison(figs_dir_path / "benchmark_resConv64_6months_increment", 
+                            ds_forecast_model_event,
+                            data_dynamic_ch,
+                            geodata=METADATA_CH,
+                            suptitle_prefix="resConv64, Increment Learning, ")
+
 
 # Benchmark skills
-for key in (ds_forecast_benchmark1.data_vars.keys()):
+for key in (ds_forecast_benchmark.data_vars.keys()):
     skills_dir = (test_event_dir / "skills" / key)
     ds_cont_averaged_skill = xr.open_dataset(skills_dir / "deterministic_continuous_global_skill.nc")
     ds_cat_averaged_skill = xr.open_dataset(skills_dir / "deterministic_categorical_global_skill.nc")
@@ -171,7 +204,7 @@ for key in (ds_forecast_benchmark1.data_vars.keys()):
 cont = []
 cat = []
 spatial = []
-for key in (ds_forecast_benchmark1.data_vars.keys()):
+for key in (ds_forecast_benchmark.data_vars.keys()):
     skills_dir = (test_event_dir / "skills" / key)
     cont.append(xr.open_dataset(skills_dir / "deterministic_continuous_global_skill.nc"))
     cat.append(xr.open_dataset(skills_dir / "deterministic_categorical_global_skill.nc"))

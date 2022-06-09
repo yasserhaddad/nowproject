@@ -2,9 +2,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
-import xarray as xr
-import cartopy.crs as ccrs
-import matplotlib.pyplot as plt
 
 # https://pytorch.org/tutorials/recipes/recipes/tensorboard_with_pytorch.html
 # https://torchmetrics.readthedocs.io/en/latest/pages/quickstart.html
@@ -139,3 +136,14 @@ class FSSLoss(nn.Module):
         eps = 1e-7
         
         return MSE_n / (MSE_n_ref + eps)
+
+
+class CombinedFSSLoss(nn.Module):
+    def __init__(self, mask_size, cutoffs):
+        super(CombinedFSSLoss, self).__init__()
+        self.mask_size = mask_size
+        self.losses = [FSSLoss(mask_size, cutoff) for cutoff in cutoffs]
+    
+    def forward(self, label, pred):
+        forwards = torch.stack([loss(label, pred) for loss in self.losses]) 
+        return forwards.sum()
