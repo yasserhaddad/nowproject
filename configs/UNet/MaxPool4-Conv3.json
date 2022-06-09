@@ -13,6 +13,7 @@
         "pool_method": "Max",
         "kernel_size_pooling": 4,
         "padding": "True",
+        "increment_learning": "True",
         "architecture_name": "UNet"
     },
     "dataloader_settings": {

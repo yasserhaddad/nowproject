@@ -153,7 +153,7 @@ def plot_forecast_error_comparison(figs_dir: pathlib.Path,
                                 orientation="horizontal", 
                                 extend = 'both',
                                 aspect=aspect_cbar)      
-            cbar.ax.set_yticklabels(clevs_str) 
+            cbar.ax.set_xticklabels(clevs_str) 
             cbar.set_label("Precipitation intensity (mm/h)")
             cbar.ax.xaxis.set_label_position('top')
 
@@ -249,7 +249,7 @@ def plot_forecast_comparison(figs_dir: pathlib.Path,
         fig, axs = plt.subplots(
             len(variables),
             2,
-            figsize=(12, 4*len(variables)),
+            figsize=(14, 4*len(variables)),
             subplot_kw={'projection': proj4_to_cartopy(geodata["projection"])}
         )
 
@@ -289,6 +289,7 @@ def plot_forecast_comparison(figs_dir: pathlib.Path,
                                 aspect=aspect_cbar)       
             cbar.set_label("Precipitation intensity (mm/h)")
             cbar.ax.xaxis.set_label_position('top')
+            cbar.ax.set_xticklabels(clevs_str)
 
             # Add plot labels 
             # if ax_count == 0: 

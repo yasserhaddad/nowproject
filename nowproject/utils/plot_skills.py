@@ -9,16 +9,9 @@ import cartopy.feature as cfeature
 from matplotlib.axes import Axes
 from matplotlib.colors import Colormap, Normalize
 import matplotlib.pyplot as plt
-from pysteps.visualization.precipfields import plot_precip_field, get_colormap
-from nowproject.data.data_config import METADATA
-from cartopy.mpl.geoaxes import GeoAxesSubplot
-from PIL import Image
 
-from xarray.plot.utils import _add_colorbar, label_from_attrs
-from pysteps.visualization.utils import get_geogrid, get_basemap_axis, proj4_to_cartopy
-
-# import seaborn as sns
-# sns.set_theme()
+import seaborn as sns
+sns.set_theme()
 
 SKILL_CMAP_DICT = {
     "error_CoV": plt.get_cmap("RdYlBu"),
@@ -121,7 +114,8 @@ SKILL_YLIM_DICT = {
 
 
 def plot_averaged_skill(
-    ds_averaged_skill, skill="RMSE", variables=["precip"], n_leadtimes=None
+    ds_averaged_skill, skill="RMSE", variables=["precip"], n_leadtimes=None,
+    title=None
 ):
     if not n_leadtimes:
         n_leadtimes = len(ds_averaged_skill.leadtime)
@@ -131,7 +125,7 @@ def plot_averaged_skill(
     leadtimes = ds_averaged_skill["leadtime"].values
     leadtimes = [str(l).split(" ")[0] for l in leadtimes.astype("timedelta64[m]")]
     # Create figure
-    fig, axs = plt.subplots(1, len(variables), figsize=(15, 4))
+    fig, axs = plt.subplots(1, len(variables), figsize=(12, 4))
     axs = [axs] if len(variables) < 2 else axs.flatten()    
 
     for ax, var in zip(axs, variables):
@@ -163,7 +157,10 @@ def plot_averaged_skill(
         ax.set_xticklabels(leadtimes[::2])
         ##------------------------------------------------------------------.
         # Add title
-        ax.set_title(var.upper())
+        if title:
+            ax.set_title(title)
+        else:
+            ax.set_title(var.upper())
         ##------------------------------------------------------------------.
     fig.tight_layout()
     return fig

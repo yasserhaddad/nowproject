@@ -10,6 +10,8 @@ import torch
 import time
 import pickle
 import dask
+import torch
+
 from xforecasting.dataloader_autoregressive import (
     AutoregressiveDataset,
     AutoregressiveDataLoader,
@@ -91,6 +93,8 @@ def AutoregressiveTraining(
     swa_start=8,
     # GPU settings
     device="cpu",
+    # Tensorboard
+    tensorboard_writer=None
 ):
     """AutoregressiveTraining.
 
@@ -381,13 +385,11 @@ def AutoregressiveTraining(
 
                     ##--------------------------------------------------------.
                     # If ar_training_strategy is "AR", perform backward pass at each AR iteration
+
                     if ar_training_strategy == "AR":
                         # - Detach gradient of Y_pred (to avoid RNN-style optimization)
-                        dict_training_Y_predicted[
-                            ar_iteration
-                        ] = dict_training_Y_predicted[
-                            ar_iteration
-                        ].detach()  # TODO: should not be detached after backward?
+                        dict_training_Y_predicted[ar_iteration] = \
+                            dict_training_Y_predicted[ar_iteration].detach()  # TODO: should not be detached after backward?
                         # - AR weight the loss (aka weight sum the gradients ...)
                         current_ar_loss = dict_training_loss_per_ar_iteration[
                             ar_iteration
@@ -455,6 +457,15 @@ def AutoregressiveTraining(
                         ar_scheduler=ar_scheduler,
                         lr_scheduler=lr_scheduler,
                     )
+                
+                if tensorboard_writer:
+                    if batch_count % scoring_interval == 0:
+                        tensorboard_writer.add_scalar('training loss',
+                                                      training_total_loss,
+                                                      ar_training_info.ar_iterations
+                                                    )
+                        
+
                 ##------------------------------------------------------------.
                 # Printing infos (if no validation data available)
                 # TODO: This require CPU-GPU synchronization
@@ -463,7 +474,7 @@ def AutoregressiveTraining(
                         rounded_loss = round(dict_training_loss_per_ar_iteration[ar_iteration].item(), 5)
                         es_counter = early_stopping.counter
                         es_patience = early_stopping.patience
-                        print(f"Epoch: {epoch} | Batch: {batch_count}/{num_batches} | "
+                        print(f"Epoch: {epoch+1} | Batch: {batch_count}/{num_batches} | "
                               f"AR: {ar_iteration} | Loss: {rounded_loss} | "
                               f"ES: {es_counter}/{es_patience}")
                     ##--------------------------------------------------------.
@@ -574,7 +585,8 @@ def AutoregressiveTraining(
                                 )
 
                         ##----------------------------------------------------.
-                        ### Update validation info                                                                                        # TODO: This require CPU-GPU synchronization
+                        ### Update validation info                                                            
+                        # TODO: This require CPU-GPU synchronization
                         ar_training_info.update_validation_stats(
                             total_loss=validation_total_loss,
                             dict_loss_per_ar_iteration=dict_validation_loss_per_ar_iteration,
@@ -590,7 +602,7 @@ def AutoregressiveTraining(
                         print(
                             "Epoch: {} | Batch: {}/{} | AR: {} | Loss: {} | "
                             "ES: {}/{} | Elapsed time: {}s".format(
-                                epoch,
+                                epoch+1,
                                 batch_count,
                                 num_batches,
                                 ar_iteration,
@@ -659,7 +671,7 @@ def AutoregressiveTraining(
                             early_stopping.reset()
                             # Print info
                             current_ar_training_info = "(epoch: {}, iteration: {}, total_iteration: {})".format(
-                                ar_training_info.epoch,
+                                ar_training_info.epoch+1,
                                 ar_training_info.epoch_iteration,
                                 ar_training_info.iteration,
                             )
@@ -748,7 +760,7 @@ def AutoregressiveTraining(
                 else:
                     model_weights = model.state_dict()
 
-                torch.save(model_weights, model_fpath[:-3] + "_epoch_{}".format(epoch) + ".h5")
+                torch.save(model_weights, model_fpath[:-3] + "_epoch_{}".format(epoch+1) + ".h5")
 
         ##--------------------------------------------------------------------.
         ### Save final model weights
