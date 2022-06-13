@@ -158,7 +158,7 @@ plot_forecast_comparison(figs_dir_path / "benchmark_steps_median",
                                suptitle_prefix="STEPS Median, ")
 
 ## Model
-model_dir = Path("/home/haddad/experiments/RNN-AR6-resConv-MaxPooling-5mins-Patches-LogNormalizeScaler-MSEMasked-4epochs-6months/")
+model_dir = Path("/home/haddad/experiments/RNN-AR6-resConv64-IncrementLearning-5mins-Patches-LogNormalizeScaler-MSEMasked-4epochs-6months/")
 forecast_zarr_fpath = (
         model_dir / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
     )

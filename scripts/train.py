@@ -46,7 +46,8 @@ import nowproject.architectures as dl_architectures
 from nowproject.loss import (
     FSSLoss,
     CombinedFSSLoss, 
-    WeightedMSELoss, 
+    WeightedMSELoss,
+    LogCoshLoss, 
     reshape_tensors_4_loss
 )
 from nowproject.training import AutoregressiveTraining
@@ -61,10 +62,19 @@ from nowproject.utils.plot_map import (
 )
 from nowproject.data.data_config import METADATA_CH
 
-from nowproject.utils.scalers import (
+from nowproject.scalers import (
     Scaler,
     log_normalize_inverse_transform,
     log_normalize_transform,
+    normalize_transform,
+    normalize_inverse_transform,
+    bin_transform,
+    bin_inverse_transform
+)
+from nowproject.utils.scalers_modules import (
+    log_normalize_scaler,
+    normalize_scaler,
+    bin_scaler
 )
 from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
 from nowproject.data.data_utils import (
@@ -107,25 +117,13 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     ##------------------------------------------------------------------------.
     # Load scalers
-    transform_kwargs = dict(feature_min=np.log10(0.025), 
-                            feature_max=np.log10(100), 
-                            threshold=np.log10(0.1))
-    scaler = Scaler(log_normalize_transform, 
-                    log_normalize_inverse_transform, 
-                    transform_kwargs=transform_kwargs,
-                    inverse_transform_kwargs=transform_kwargs)
-    model_settings["last_layer_activation"] = False
-    
-    # bins = [0.0, 0.1, 0.5, 1.0, 2.0, 4.0, 8.0, 12.0, 20.0, 30.0, 50.0, 80.0, 120.0, 250.0]
-
-    # centres = [0] + [(bins[i] + bins[i+1])/2 for i in range(0, len(bins)-1)] + [np.nan]
-    # scaler = RainBinScaler(bins, centres)
+    # scaler = normalize_scaler()
     # model_settings["last_layer_activation"] = False
 
-    # scaler = LogScaler(epsilon=1e-5)
-    # model_settings["last_layer_activation"] = True
-
-    # scaler = dBScaler(threshold=0.1, inverse_threshold=-10.0, zero_value=-15.0)
+    scaler = log_normalize_scaler()
+    model_settings["last_layer_activation"] = False
+    
+    # scaler = bin_scaler()
     # model_settings["last_layer_activation"] = False
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
@@ -134,6 +132,8 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
     training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
     validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
+    # training_years = np.array(["2018-01-01T00:00", "2018-01-03T23:57:30"], dtype="M8[s]")
+    # validation_years = np.array(["2021-01-01T00:00", "2021-01-02T23:57:30"], dtype="M8[s]")
     test_events = create_test_events_time_range(test_events_path, freq="5min")
 
     # - Split data sets
@@ -223,7 +223,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-6months", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-{training_settings['epochs']}epochs-6months", 
         force=force
     )  # force=True will delete existing directory
 
@@ -236,10 +236,12 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     ##------------------------------------------------------------------------.
     # - Define custom loss function
-    # --> TODO: For masking we could simply set weights to 0 !!!
-    # criterion = WeightedMSELoss(weights=weights)
+    
     # criterion = WeightedMSELoss(reduction="mean_masked")
-    criterion = WeightedMSELoss(reduction="mean_masked")
+    # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
+    criterion = WeightedMSELoss(reduction="mean_masked", 
+                                weighted_truth=True, weights_params=(5, 1))
+    # criterion = LogCoshLoss(weighted_truth=True, weights_params=(5, 1))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
 
@@ -257,11 +259,12 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define AR_Weights_Scheduler
     ## - For RNN: growth and decay works well
     if training_settings["ar_training_strategy"] == "RNN":
+        initial_ar_absolute_weights = [1] if "Direct" in model_name else [1, 1]
         ar_scheduler = AR_Scheduler(
             method="LinearStep",
             factor=0.0005,
             fixed_ar_weights=[0],
-            initial_ar_absolute_weights=[1, 1],
+            initial_ar_absolute_weights=initial_ar_absolute_weights,
         )
     ## - FOR AR : Do not decay weights once they growthed
     elif training_settings["ar_training_strategy"] == "AR":
@@ -356,7 +359,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ### Create plots related to training evolution
     print("========================================================================================")
     print("- Creating plots to investigate training evolution")
-    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.08))
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.01))
 
     ##-------------------------------------------------------------------------.
     ### - Create predictions
@@ -381,7 +384,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         scaler_inverse=scaler,
         # Dataloader options
         device=device,
-        batch_size=50,  # number of forecasts per batch
+        batch_size=25,  # number of forecasts per batch
         num_workers=dataloader_settings["num_workers"],
         prefetch_factor=dataloader_settings["prefetch_factor"],
         prefetch_in_gpu=dataloader_settings["prefetch_in_gpu"],
@@ -451,49 +454,69 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Save sptial skills
     ds_det_cont_skill.to_netcdf((model_dir / "model_skills" / "deterministic_continuous_spatial_skill.nc"))
 
-    ds_det_cat_skill = xverif.deterministic(
-        pred=ds_verification_format.chunk({"time": -1}),
-        obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
-        forecast_type="categorical",
-        aggregating_dim="time",
-        thr=0.1
-    )
-    # - Save sptial skills
-    ds_det_cat_skill.to_netcdf((model_dir / "model_skills" / "deterministic_categorical_spatial_skill.nc"))
+    thresholds = [0.1, 1, 5, 10, 15]
+    ds_det_cat_skills = {}
+    ds_det_spatial_skills = {}
+    for thr in thresholds:
+        print("Threshold:", thr)
+        ds_det_cat_skill = xverif.deterministic(
+            pred=ds_verification_format.chunk({"time": -1}),
+            obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
+            forecast_type="categorical",
+            aggregating_dim="time",
+            thr=thr
+        )
+        # - Save sptial skills
+        ds_det_cat_skill.to_netcdf((model_dir / "model_skills" / f"deterministic_categorical_spatial_skill_thr{thr}.nc"))
+        ds_det_cat_skills[thr] = ds_det_cat_skill
 
-    ds_det_spatial_skill = xverif.deterministic(
-        pred=ds_verification_format.chunk({"x": -1, "y": -1}),
-        obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"x": -1, "y": -1}),
-        forecast_type="spatial",
-        aggregating_dim=["x", "y"],
-        thr=0.1,
-        win_size=5
-    )
-    ds_det_spatial_skill.to_netcdf((model_dir / "model_skills" / "deterministic_spatial_skill.nc"))
+        spatial_scales = [5]
+        ds_det_spatial_skills[thr] = {}
+        for spatial_scale in spatial_scales:
+            print("Spatial scale:", spatial_scale)
+            ds_det_spatial_skill = xverif.deterministic(
+                pred=ds_verification_format.chunk({"x": -1, "y": -1}),
+                obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"x": -1, "y": -1}),
+                forecast_type="spatial",
+                aggregating_dim=["x", "y"],
+                thr=thr,
+                win_size=spatial_scale
+            )
+            ds_det_spatial_skill.to_netcdf((model_dir / "model_skills" / f"deterministic_spatial_skill_thr{thr}_scale{spatial_scale}.nc"))
+            ds_det_spatial_skills[thr][spatial_scale] = ds_det_spatial_skill
 
     ##------------------------------------------------------------------------.
     ### - Create verification summary plots and maps
     print("========================================================================================")
     print("- Create verification summary plots and maps")
     ds_cont_averaged_skill = ds_det_cont_skill.mean(dim=["y", "x"])
-    ds_cat_averaged_skill = ds_det_cat_skill.mean(dim=["y", "x"])
-    ds_spatial_average_skill = ds_det_spatial_skill.mean(dim=["time"])
-
-    # - Save averaged skills
     ds_cont_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_continuous_global_skill.nc")
-    ds_cat_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_categorical_global_skill.nc")
-    ds_spatial_average_skill.to_netcdf(model_dir / "model_skills" / "deterministic_spatial_global_skill.nc")
+    
+    ds_cat_averaged_skills = {}
+    ds_spatial_averaged_skills = {}
+    for thr in ds_det_cat_skills:
+        ds_cat_averaged_skills[thr] = ds_det_cat_skills[thr].mean(dim=["y", "x"])
+        ds_cat_averaged_skills[thr].to_netcdf(model_dir / "model_skills" / f"deterministic_categorical_global_skill_thr{thr}_mean.nc")
+        
+        ds_spatial_averaged_skills[thr] = {}
+        for spatial_scale in ds_det_spatial_skills[thr]:
+            ds_spatial_averaged_skills[thr][spatial_scale] = ds_det_spatial_skills[thr][spatial_scale].mean(dim=["time"])
+            ds_spatial_averaged_skills[thr][spatial_scale].to_netcdf(model_dir / "model_skills" / f"deterministic_spatial_global_skill_thr{thr}_scale{spatial_scale}.nc")
 
     print("RMSE:")
     print(ds_cont_averaged_skill["feature"].sel(skill="RMSE").values)
-    print("F1:")
-    print(ds_cat_averaged_skill["feature"].sel(skill="F1").values)
-    print("ACC:")
-    print(ds_cat_averaged_skill["feature"].sel(skill="ACC").values)
-    print("CSI:")
-    print(ds_cat_averaged_skill["feature"].sel(skill="CSI").values)
-    print("FSS:")
-    print(ds_spatial_average_skill["feature"].sel(skill="FSS").values)
+
+    for thr in ds_cat_averaged_skills:
+        print(f"\nCategorical and Spatial metrics for threshold {thr}\n")
+        print(f"F1@{thr}:")
+        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="F1").values)
+        print(f"ACC@{thr}:")
+        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="ACC").values)
+        print(f"CSI@{thr}:")
+        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="CSI").values)
+        for spatial_scale in ds_spatial_averaged_skills[thr]:
+            print(f"FSS@{thr} threshold and @{spatial_scale} spatial scale:")
+            print(ds_spatial_averaged_skills[thr][spatial_scale]["feature"].sel(skill="FSS").values)
 
 
     # - Create skill vs. leadtime plots
@@ -504,19 +527,20 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         model_dir / "figs" / "skills" / "averaged_continuous_skill.png"
     )
 
-    plot_averaged_skills(ds_cat_averaged_skill, 
-                     skills=["POD", "FAR", "FA", "ACC", "CSI", "F1"], variables=["feature"]).savefig(
-        model_dir / "figs" / "skills" / "averaged_categorical_skills.png"
-    )
-
-    plot_averaged_skills(ds_spatial_average_skill, 
-                     skills=["SSIM", "FSS"], variables=["feature"]).savefig(
-        model_dir / "figs" / "skills" / "averaged_spatial_skills.png"
-    )
-
     plot_skills_distribution(ds_det_cont_skill, variables=["feature"]).savefig(
         model_dir / "figs" / "skills" / "skills_distribution.png",
     )
+
+    for thr in ds_cat_averaged_skills:
+        plot_averaged_skills(ds_cat_averaged_skills[thr], 
+                        skills=["POD", "FAR", "FA", "ACC", "CSI", "F1"], variables=["feature"]).savefig(
+            model_dir / "figs" / "skills" / f"averaged_categorical_skills_thr{thr}.png"
+        )
+        for spatial_scale in ds_spatial_averaged_skills[thr]:
+            plot_averaged_skills(ds_spatial_averaged_skills[thr][spatial_scale], 
+                            skills=["SSIM", "FSS"], variables=["feature"], figsize=(12, 8)).savefig(
+                model_dir / "figs" / "skills" / f"averaged_spatial_skills_thr{thr}_scale{spatial_scale}.png"
+            )
 
     ##------------------------------------------------------------------------.
     ### - Create animations for some forecast 
@@ -528,7 +552,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         "2017-01-12 17:00:00",
         "2017-01-31 16:00:00",
         "2017-06-14 16:00:00",
-        "2017-07-07 18:00:00",
+        "2017-07-07 16:00:00",
         "2017-08-31 17:00:00"
     ]
     for timestep in timesteps:
@@ -559,6 +583,7 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
     default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
+    # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
 
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 

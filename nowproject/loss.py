@@ -49,15 +49,19 @@ def reshape_tensors_4_loss(Y_pred, Y_obs, dim_info_dynamic, channels_first=False
 ### Loss definitions ###
 ########################
 class WeightedMSELoss(nn.MSELoss):
-    def __init__(self, reduction="mean", weights=None, zero_value=0):
+    def __init__(self, reduction="mean", pixel_weights=None, weighted_truth=False, weights_params=None, 
+                 zero_value=0):
         super(WeightedMSELoss, self).__init__(reduction="none")
         if not isinstance(reduction, str) or reduction not in ("mean", "mean_masked", "sum", "none"):
             raise ValueError("{} is not a valid value for reduction".format(reduction))
         self.weighted_mse_reduction = reduction
 
-        if weights is not None:
-            self.check_weights(weights)
-        self.weights = weights
+        if pixel_weights is not None:
+            self.check_weights(pixel_weights)
+        self.pixel_weights = pixel_weights
+
+        self.weighted_truth = weighted_truth
+        self.weights_params = weights_params
         self.zero_value = zero_value
 
     def forward(self, label, pred):
@@ -65,24 +69,30 @@ class WeightedMSELoss(nn.MSELoss):
             mask = torch.logical_or(label > self.zero_value, pred > self.zero_value)
             pred = torch.where(mask, pred, 
                                torch.tensor(float(self.zero_value)).to(pred.device)) 
+
         mse = super(WeightedMSELoss, self).forward(pred, label)
-        weights = self.weights
+        pixel_weights = self.pixel_weights
         n_batch, n_y, n_x, n_val = mse.shape
-        if weights is None:
-            weights = torch.ones((n_y, n_x), dtype=mse.dtype, device=mse.device)
-        if (n_y, n_x) != weights.shape:
+        if pixel_weights is None:
+            pixel_weights = torch.ones((n_y, n_x), dtype=mse.dtype, device=mse.device)
+        if (n_y, n_x) != pixel_weights.shape:
             raise ValueError(
-                "The number of weights does not match the the number of pixels. {} != {}".format(
+                "The number of pixel_weights does not match the the number of pixels. {} != {}".format(
                     mse.shape, (n_y, n_x)
                 )
             )
-            
-        weights = weights.view(1, n_y, n_x, 1).to(mse.device)
-        weighted_mse = mse * weights
+        pixel_weights = pixel_weights.view(1, n_y, n_x, 1).to(mse.device)
+        weighted_mse = mse * pixel_weights
+
+        if self.weighted_truth and self.weights_params is not None and len(self.weights_params) == 2:
+            weighted_label = torch.exp(self.weights_params[0]*(label**self.weights_params[1]))
+            weighted_mse = weighted_label * weighted_mse
+        
+
         if self.weighted_mse_reduction == "sum":
-            return torch.sum(weighted_mse) * len(weights)
+            return torch.sum(weighted_mse) * len(pixel_weights)
         elif self.weighted_mse_reduction == "mean" :
-            return torch.sum(weighted_mse) / torch.sum(weights) / n_batch / n_val
+            return torch.sum(weighted_mse) / torch.sum(pixel_weights) / n_batch / n_val
         elif self.weighted_mse_reduction == "mean_masked":
             len_mask = torch.sum(mask)
             len_mask = len_mask if len_mask > self.zero_value else 1.0
@@ -98,6 +108,31 @@ class WeightedMSELoss(nn.MSELoss):
         if len(weights.shape) != 1:
             raise ValueError("Weights is a 1D vector. Got {}".format(weights.shape))
 
+# ------------------------------------------------------------------------------.
+class LogCoshLoss(torch.nn.Module):
+    def __init__(self, masked=False, weighted_truth=False, weights_params=None):
+        super().__init__()
+        self.masked = masked
+        self.weighted_truth = weighted_truth
+        self.weights_params = weights_params
+    def forward(self, label, pred):
+        if self.masked:
+            mask = torch.logical_or(label > self.zero_value, pred > self.zero_value)
+            pred = torch.where(mask, pred, 
+                               torch.tensor(float(self.zero_value)).to(pred.device)) 
+        
+        ey_t = label - pred
+        log_cosh = torch.log(torch.cosh(ey_t + 1e-12))
+        if self.weighted_truth and self.weights_params is not None and len(self.weights_params) == 2:
+            weighted_label = torch.exp(self.weights_params[0]*(label**self.weights_params[1]))
+            log_cosh = weighted_label * log_cosh
+
+        if self.masked:
+            len_mask = torch.sum(mask)
+            len_mask = len_mask if len_mask > self.zero_value else 1.0
+            return torch.sum(log_cosh) / len_mask
+        else:
+            return torch.mean(log_cosh)
 
 # ------------------------------------------------------------------------------.
 class FSSLoss(nn.Module):
