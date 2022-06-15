@@ -361,13 +361,23 @@ def downsampling(in_channels, out_channels, typ='all'):
 
 
 class UpsamplingResConv(nn.Module):
-    def __init__(self, in_channels, out_channels, last=False):
+    def __init__(self, in_channels, out_channels, last=False, first_layer_kernel=(3,4,4), 
+                 first_layer_stride=(1,2,2)):
         super().__init__()
-        k = (3,4,4) if not last else 4
-        s = (1,2,2) if not last else 2
+        if isinstance(first_layer_kernel, list):
+            first_layer_kernel = tuple(first_layer_kernel)
+        
+        if isinstance(first_layer_stride, list):
+            first_layer_stride = tuple(first_layer_stride)
+
+        if len(first_layer_kernel) == 1:
+            first_layer_kernel = first_layer_kernel[0]
+        if len(first_layer_stride) == 1:
+            first_layer_stride = first_layer_stride[0]
         
         conv_module = ConvTranspose3DPadding if not last else nn.ConvTranspose3d
-        self.conv_transpose = conv_module(in_channels,  out_channels, kernel_size=k, stride=s, padding=1)
+        self.conv_transpose = conv_module(in_channels,  out_channels, kernel_size=first_layer_kernel, 
+                                          stride=first_layer_stride, padding=1)
         upsample_layers = [
             nn.LeakyReLU(negative_slope=0.02, inplace=True),
             nn.ConvTranspose3d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),

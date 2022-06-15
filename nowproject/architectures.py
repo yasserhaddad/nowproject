@@ -513,6 +513,9 @@ class resConv(nn.Module):
     def __init__(self, tensor_info: dict, 
                 # ConvBlock Options
                 n_filter: int, 
+                first_layer_upsampling_kernels: List[List[int]],
+                first_layer_upsampling_stride: List[List[int]],
+                last_convblock_kernel: List[int] = [5, 4],
                 last_layer_activation: bool = False,
                 # Architecture options
                 increment_learning: bool = False):
@@ -550,14 +553,22 @@ class resConv(nn.Module):
         self.e_conv2 = downsampling(in_channels=n_filter*2, out_channels=n_filter*3)
         self.e_conv3 = downsampling(in_channels=n_filter*3, out_channels=n_filter*4)
         
-        self.d_conv3 = UpsamplingResConv(in_channels=n_filter*4,   out_channels=n_filter*3)
-        self.d_conv2 = UpsamplingResConv(in_channels=n_filter*3,   out_channels=n_filter*2)
-        self.d_conv1 = UpsamplingResConv(in_channels=n_filter*2,   out_channels=n_filter)
-        self.d_conv0 = UpsamplingResConv(in_channels=n_filter,     out_channels=16, last=True)
+        self.d_conv3 = UpsamplingResConv(in_channels=n_filter*4,   out_channels=n_filter*3,
+                                         first_layer_kernel=first_layer_upsampling_kernels[0],
+                                         first_layer_stride=first_layer_upsampling_stride[0])
+        self.d_conv2 = UpsamplingResConv(in_channels=n_filter*3,   out_channels=n_filter*2,
+                                         first_layer_kernel=first_layer_upsampling_kernels[1],
+                                         first_layer_stride=first_layer_upsampling_stride[1])
+        self.d_conv1 = UpsamplingResConv(in_channels=n_filter*2,   out_channels=n_filter,
+                                         first_layer_kernel=first_layer_upsampling_kernels[2],
+                                         first_layer_stride=first_layer_upsampling_stride[2])
+        self.d_conv0 = UpsamplingResConv(in_channels=n_filter,     out_channels=16, last=True,
+                                         first_layer_kernel=first_layer_upsampling_kernels[3],
+                                         first_layer_stride=first_layer_upsampling_stride[3])
 
         conv_last_layers = [
-            nn.Conv1d(16, 4, 5),
-            nn.Conv1d(4, self.output_channels, 4)
+            nn.Conv1d(16, 4, last_convblock_kernel[0]),
+            nn.Conv1d(4, self.output_channels, last_convblock_kernel[1])
         ]
 
         if last_layer_activation:

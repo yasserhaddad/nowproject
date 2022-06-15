@@ -171,7 +171,7 @@ def plot_averaged_skills(
     skills=["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
     variables=["precip"],
     n_leadtimes=None,
-    figsize=(17, 19)
+    figsize=(12, 19)
 ):
     if not n_leadtimes:
         n_leadtimes = len(ds_averaged_skill.leadtime)
@@ -304,7 +304,7 @@ def plot_skills_distribution(
     leadtimes = ds_skill["leadtime"].values
     leadtimes = [str(l).split(" ")[0] for l in leadtimes.astype("timedelta64[m]")]
     # Create figure
-    fig, axs = plt.subplots(len(skills), len(variables), figsize=(17, 18))
+    fig, axs = plt.subplots(len(skills), len(variables), figsize=(12, 18))
     # Initialize axes
     ax_i = 0
     axs = axs.flatten()

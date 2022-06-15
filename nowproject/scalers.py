@@ -9,6 +9,60 @@ from xscaler.checks import (
 
 from pysteps.utils import transformation
 
+# Transform and inverse transform functions
+
+def normalize_transform(da: xr.DataArray, threshold: float, feature_min: float,
+                        feature_max: float):
+    """Normalize the data.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        DataArray to transform
+    threshold : float
+        Threshold below which the values will be set to feature_min
+    feature_min : float
+        Minimal desired value of the data
+    feature_max : float
+        Maximal desired value of the data
+
+    Returns
+    -------
+    xr.DataArray
+        Result of the Log-Normalize transform
+    """
+    da = da.where(da >= threshold, feature_min)
+    da = da.clip(max=feature_max)
+    da = (da - feature_min) / (feature_max - feature_min)
+    da = da.fillna(0.0)
+
+    return da
+
+def normalize_inverse_transform(da: xr.DataArray, threshold: float, feature_min: float,
+                                feature_max: float):
+    """Revert the normalization of the data.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        DataArray to transform
+    threshold : float
+        Threshold below which the values will be set to feature_min
+    feature_min : float
+        Minimal desired value of the data
+    feature_max : float
+        Maximal desired value of the data
+
+    Returns
+    -------
+    xr.DataArray
+        Result of the inverse of the Log-Normalize transform
+    """
+    da = da * (feature_max - feature_min) + feature_min
+    da = da.where(da >= threshold, feature_min)
+
+    return da
+
 
 def log_normalize_transform(da: xr.DataArray, threshold: float, feature_min: float, 
                             feature_max: float) -> xr.DataArray:
@@ -31,10 +85,7 @@ def log_normalize_transform(da: xr.DataArray, threshold: float, feature_min: flo
         Result of the Log-Normalize transform
     """
     da = xr.ufuncs.log10(da + 0.0001)
-    da = da.where(da >= threshold, feature_min)
-    da = da.clip(max=feature_max)
-    da = (da - feature_min) / (feature_max - feature_min)
-    da = da.fillna(0.0)
+    da = normalize_transform(da, threshold, feature_min, feature_max)
 
     return da
 
@@ -59,8 +110,7 @@ def log_normalize_inverse_transform(da: xr.DataArray, threshold: float, feature_
     xr.DataArray
         Result of the inverse of the Log-Normalize transform
     """
-    da = da * (feature_max - feature_min) + feature_min
-    da = da.where(da >= threshold, feature_min)
+    da = normalize_inverse_transform(da, threshold, feature_min, feature_max)
     da = 10 ** da
     
     return da   
@@ -210,6 +260,7 @@ def log_epsilon_inverse_transform(da: xr.DataArray, epsilon: float,
         da = da.round(2)
     return da
 
+# Scaler class
 
 class Scaler:
     def __init__(self, 

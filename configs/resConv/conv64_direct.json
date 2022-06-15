@@ -2,7 +2,7 @@
     "model_settings": {
         "pretrained_model_name": null,
         "model_name_prefix": null,
-        "model_name": "RNN-AR6-resConv64-IncrementLearning",
+        "model_name": "RNN-AR0-resConv64-Direct",
         "model_name_suffix": null,
         "n_filter": 64,
         "first_layer_upsampling_kernels": [
@@ -15,10 +15,10 @@
             [1,2,2],
             [1,2,2],
             [1,2,2],
-            [2]
+            [4,2,2]
         ],
-        "last_convblock_kernel": [5, 4],
-        "increment_learning": "True",
+        "last_convblock_kernel": [2, 2],
+        "increment_learning": "False",
         "architecture_name": "resConv"
     },
     "dataloader_settings": {
@@ -58,10 +58,21 @@
             -1
         ],
         "output_k": [
-            0
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8, 
+            9,
+            10,
+            11
         ],
         "forecast_cycle": 1,
-        "ar_iterations": 6,
+        "ar_iterations": 0,
         "stack_most_recent_prediction": true
     }
 }
