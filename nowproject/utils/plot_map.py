@@ -8,7 +8,7 @@ from typing import List, Tuple, Union
 from nowproject.utils.plot_precip import plot_single_precip
 from pysteps.visualization.utils import proj4_to_cartopy
 from pysteps.visualization.precipfields import get_colormap
-
+from matplotlib import colors
 from matplotlib.colors import Normalize
 
 def rescale_spatial_axes(ds: Union[xr.Dataset, xr.DataArray],
@@ -19,6 +19,15 @@ def rescale_spatial_axes(ds: Union[xr.Dataset, xr.DataArray],
     ds = ds.assign_coords({spatial_dims[1]: ds[spatial_dims[1]].data*scale_factor})
 
     return ds
+
+
+def get_colormap_error():
+    clevs = [-60, - 30, -16, -8, -4, -2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 4, 8, 16, 30, 60]
+    clevs_str = [str(clev) for clev in clevs]
+    norm = colors.BoundaryNorm(boundaries=clevs, ncolors=len(clevs)+1)
+    # cmap = plt.get_cmap("RdBu_r").reversed()
+    cmap = plt.get_cmap("Spectral")
+    return cmap, norm, clevs, clevs_str
 
 
 def plot_obs(figs_dir: pathlib.Path,
@@ -98,6 +107,7 @@ def plot_forecast_error_comparison(figs_dir: pathlib.Path,
     ds_dict = {"pred": ds_forecast, "obs": ds_obs, "error": ds_error}
 
     _, norm, clevs, clevs_str = get_colormap("intensity", "mm/h", "pysteps")
+    cmap_error, norm_error, clevs_error, clevs_str_error = get_colormap_error()
 
     # Retrieve common variables to plot 
     variables = list(ds_forecast.data_vars.keys())
@@ -158,23 +168,25 @@ def plot_forecast_error_comparison(figs_dir: pathlib.Path,
             cbar.ax.xaxis.set_label_position('top')
 
             tmp_error = ds_dict['error'][var].isel(time=i)
-            norm = Normalize(vmin=-80, vmax=80)
+            # norm = Normalize(vmin=clevs_error[0], vmax=clevs_error[-1])
             _, p_3 = plot_single_precip(tmp_error,
                                       ax=axs[ax_count+2], 
                                       geodata=geodata, 
                                       title=None, 
                                       colorbar=False,
-                                      norm=norm,
-                                      cmap="Spectral")
+                                      norm=norm_error,
+                                      cmap=cmap_error)
             axs[ax_count+2].set_title(None)
             axs[ax_count+2].outline_patch.set_linewidth(1)
             # - Add error colorbar
             # cb = plt.colorbar(e_p, ax=axs[ax_count+2], orientation="horizontal") # pad=0.15)
             # cb.set_label(label=var.upper() + " Error") # size='large', weight='bold'
             cbar_err = fig.colorbar(p_3, ax=axs[ax_count+2],
+                                    ticks=clevs_error,
                                     orientation="horizontal",
                                     extend = 'both',
-                                    aspect = aspect_cbar/2)      
+                                    aspect = aspect_cbar/2)  
+            cbar_err.ax.set_xticklabels(clevs_str_error)    
             cbar_err.set_label("Precipitation intensity error")
             cbar_err.ax.xaxis.set_label_position('top')
             # Add plot labels 
@@ -185,7 +197,7 @@ def plot_forecast_error_comparison(figs_dir: pathlib.Path,
             # Update ax_count 
             ax_count += 3
 
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.savefig(filepath, dpi=200, bbox_inches='tight')
         if save_gif:
             pil_frames.append(Image.open(filepath).convert("P",palette=Image.ADAPTIVE))
         
@@ -298,7 +310,7 @@ def plot_forecast_comparison(figs_dir: pathlib.Path,
             # Update ax_count 
             ax_count += 2
 
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.savefig(filepath, dpi=200, bbox_inches='tight')
         if save_gif:
             pil_frames.append(Image.open(filepath).convert("P",palette=Image.ADAPTIVE))
         

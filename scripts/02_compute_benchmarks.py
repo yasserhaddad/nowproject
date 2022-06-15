@@ -22,55 +22,77 @@ AR = [-2, -1]
 
 def compute_skills(ds_benchmark, data_dynamic, model_skills_dir):
     model_skills_dir.mkdir(exist_ok=True, parents=True)
-    ds_det_cont_skill = xverif.deterministic(
-        pred=ds_benchmark.chunk({"time": -1}),
-        obs=data_dynamic.sel(time=ds_benchmark.time).chunk({"time": -1}),
-        forecast_type="continuous",
-        aggregating_dim="time",
-    )
-    # - Save deterministic continuous skills
-    ds_det_cont_skill.to_netcdf((model_skills_dir/ "deterministic_continuous_spatial_skill.nc"))
+    # ds_det_cont_skill = xverif.deterministic(
+    #     pred=ds_benchmark.chunk({"time": -1}),
+    #     obs=data_dynamic.sel(time=ds_benchmark.time).chunk({"time": -1}),
+    #     forecast_type="continuous",
+    #     aggregating_dim="time",
+    # )
+    # # - Save deterministic continuous skills
+    # ds_det_cont_skill.to_netcdf((model_skills_dir/ "deterministic_continuous_spatial_skill.nc"))
 
-    ds_det_cat_skill = xverif.deterministic(
-        pred=ds_benchmark.chunk({"time": -1}),
-        obs=data_dynamic.sel(time=ds_benchmark.time).chunk({"time": -1}),
-        forecast_type="categorical",
-        aggregating_dim="time",
-        thr=0.1
-    )
-    # - Save deterministic categorical skills
-    ds_det_cat_skill.to_netcdf((model_skills_dir / "deterministic_categorical_spatial_skill.nc"))
-    
-    ds_det_spatial_skill = xverif.deterministic(
-        pred=ds_benchmark.chunk({"x": -1, "y": -1}),
-        obs=data_dynamic.sel(time=ds_benchmark.time).chunk({"x": -1, "y": -1}),
-        forecast_type="spatial",
-        aggregating_dim=["x", "y"],
-        thr=0.1,
-        win_size=5
-    )
-    ds_det_spatial_skill.to_netcdf((model_skills_dir / "deterministic_spatial_skill.nc"))
+    thresholds = [0.1, 1, 5, 10, 15]
+    ds_det_cat_skills = {}
+    ds_det_spatial_skills = {}
+    for thr in thresholds:
+        print("Threshold:", thr)
+        ds_det_cat_skill = xverif.deterministic(
+            pred=ds_benchmark.chunk({"time": -1}),
+            obs=data_dynamic.sel(time=ds_benchmark.time).chunk({"time": -1}),
+            forecast_type="categorical",
+            aggregating_dim="time",
+            thr=thr
+        )
+        # - Save sptial skills
+        ds_det_cat_skill.to_netcdf((model_skills_dir / f"deterministic_categorical_spatial_skill_thr{thr}.nc"))
+        ds_det_cat_skills[thr] = ds_det_cat_skill
+
+        spatial_scales = [5]
+        ds_det_spatial_skills[thr] = {}
+        for spatial_scale in spatial_scales:
+            print("Spatial scale:", spatial_scale)
+            ds_det_spatial_skill = xverif.deterministic(
+                pred=ds_benchmark.chunk({"x": -1, "y": -1}),
+                obs=data_dynamic.sel(time=ds_benchmark.time).chunk({"x": -1, "y": -1}),
+                forecast_type="spatial",
+                aggregating_dim=["x", "y"],
+                thr=thr,
+                win_size=spatial_scale
+            )
+            ds_det_spatial_skill.to_netcdf((model_skills_dir / f"deterministic_spatial_skill_thr{thr}_scale{spatial_scale}.nc"))
+            ds_det_spatial_skills[thr][spatial_scale] = ds_det_spatial_skill
     
 
-    ds_cont_averaged_skill = ds_det_cont_skill.mean(dim=["y", "x"])
-    ds_cat_averaged_skill = ds_det_cat_skill.mean(dim=["y", "x"])
-    ds_spatial_average_skill = ds_det_spatial_skill.mean(dim=["time"])
+    # ds_cont_averaged_skill = ds_det_cont_skill.mean(dim=["y", "x"])
+    # ds_cont_averaged_skill.to_netcdf(model_skills_dir / "deterministic_continuous_global_skill.nc")
+
+    ds_cat_averaged_skills = {}
+    ds_spatial_averaged_skills = {}
+    for thr in ds_det_cat_skills:
+        ds_cat_averaged_skills[thr] = ds_det_cat_skills[thr].mean(dim=["y", "x"])
+        ds_cat_averaged_skills[thr].to_netcdf(model_skills_dir / f"deterministic_categorical_global_skill_thr{thr}_mean.nc")
+        
+        ds_spatial_averaged_skills[thr] = {}
+        for spatial_scale in ds_det_spatial_skills[thr]:
+            ds_spatial_averaged_skills[thr][spatial_scale] = ds_det_spatial_skills[thr][spatial_scale].mean(dim=["time"])
+            ds_spatial_averaged_skills[thr][spatial_scale].to_netcdf(model_skills_dir / f"deterministic_spatial_global_skill_thr{thr}_scale{spatial_scale}.nc")
+
 
     # - Save averaged skills
-    ds_cont_averaged_skill.to_netcdf(model_skills_dir / "deterministic_continuous_global_skill.nc")
-    ds_cat_averaged_skill.to_netcdf(model_skills_dir / "deterministic_categorical_global_skill.nc")
-    ds_spatial_average_skill.to_netcdf(model_skills_dir / "deterministic_spatial_global_skill.nc")
     
-    print("RMSE:")
-    print(ds_cont_averaged_skill["feature"].sel(skill="RMSE").values)
-    print("F1:")
-    print(ds_cat_averaged_skill["feature"].sel(skill="F1").values)
-    print("ACC:")
-    print(ds_cat_averaged_skill["feature"].sel(skill="ACC").values)
-    print("CSI:")
-    print(ds_cat_averaged_skill["feature"].sel(skill="CSI").values)
-    print("FSS:")
-    print(ds_spatial_average_skill["feature"].sel(skill="FSS").values)
+    # print("RMSE:")
+    # print(ds_cont_averaged_skill["feature"].sel(skill="RMSE").values)
+    for thr in ds_cat_averaged_skills:
+        print(f"\nCategorical and Spatial metrics for threshold {thr}\n")
+        print(f"F1@{thr}:")
+        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="F1").values)
+        print(f"ACC@{thr}:")
+        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="ACC").values)
+        print(f"CSI@{thr}:")
+        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="CSI").values)
+        for spatial_scale in ds_spatial_averaged_skills[thr]:
+            print(f"FSS@{thr} threshold and @{spatial_scale} spatial scale:")
+            print(ds_spatial_averaged_skills[thr][spatial_scale]["feature"].sel(skill="FSS").values)
 
 if __name__ == "__main__":
     t_i = time.time()
@@ -179,6 +201,7 @@ if __name__ == "__main__":
     ds_benchmark = xr.concat(list_ds_benchmark, dim="forecast_reference_time")
     ds_benchmark = reshape_forecasts_for_verification(ds_benchmark)
     for key in (ds_benchmark.data_vars.keys()):
+        print("Compute verification metrics for :", key)
         model_skills_dir = (benchmark_dir_path / "combined" / "skills" / key)
         ds_temp = ds_benchmark[[key]].rename({key: "feature"}) 
         compute_skills(ds_temp, data_dynamic, model_skills_dir)
@@ -186,7 +209,12 @@ if __name__ == "__main__":
     ds_benchmark = xr.concat(list_ds_benchmark, dim="forecast_reference_time")
     ds_benchmark = xr_sel_coords_between(ds_benchmark, **boundaries)
     ds_benchmark = reshape_forecasts_for_verification(ds_benchmark)
+
+    boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
+    data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr",
+                                        timestep=5, boundaries=boundaries)
     for key in (ds_benchmark.data_vars.keys()):
+        print("Computing verification metrics for :", key)
         model_skills_dir = (benchmark_dir_path / "combined_ch" / "skills" / key)
         ds_temp = ds_benchmark[[key]].rename({key: "feature"}) 
         compute_skills(ds_temp, data_dynamic, model_skills_dir)
