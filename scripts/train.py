@@ -38,6 +38,8 @@ from nowproject.utils.config import (
     create_test_events_time_range
 )
 
+from nowproject.utils.verification import verification_routine
+
 from xverif import xverif
 
 # Project specific functions
@@ -328,9 +330,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         validation_data_bc=None,
         scaler=scaler,
         # Dataloader settings
-        num_workers=dataloader_settings[
-            "num_workers"
-        ],  # dataloader_settings['num_workers'],
+        num_workers=dataloader_settings["num_workers"], 
         prefetch_factor=dataloader_settings["prefetch_factor"],
         prefetch_in_gpu=dataloader_settings["prefetch_in_gpu"],
         drop_last_batch=dataloader_settings["drop_last_batch"],
@@ -359,7 +359,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ### Create plots related to training evolution
     print("========================================================================================")
     print("- Creating plots to investigate training evolution")
-    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.01))
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.04))
 
     ##-------------------------------------------------------------------------.
     ### - Create predictions
@@ -445,79 +445,15 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     print("- Run deterministic verification")
     # dask.config.set(scheduler='processes')
     # - Compute skills
-    ds_det_cont_skill = xverif.deterministic(
-        pred=ds_verification_format.chunk({"time": -1}),
-        obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
-        forecast_type="continuous",
-        aggregating_dim="time",
-    )
-    # - Save sptial skills
-    ds_det_cont_skill.to_netcdf((model_dir / "model_skills" / "deterministic_continuous_spatial_skill.nc"))
+    ds_det_cont_skill, ds_det_cat_skills, ds_det_spatial_skills, \
+         ds_cont_averaged_skill, ds_cat_averaged_skills, ds_spatial_averaged_skills = \
+            verification_routine(ds_verification_format, data_dynamic, model_dir / "model_skills")
 
-    thresholds = [0.1, 1, 5, 10, 15]
-    ds_det_cat_skills = {}
-    ds_det_spatial_skills = {}
-    for thr in thresholds:
-        print("Threshold:", thr)
-        ds_det_cat_skill = xverif.deterministic(
-            pred=ds_verification_format.chunk({"time": -1}),
-            obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"time": -1}),
-            forecast_type="categorical",
-            aggregating_dim="time",
-            thr=thr
-        )
-        # - Save sptial skills
-        ds_det_cat_skill.to_netcdf((model_dir / "model_skills" / f"deterministic_categorical_spatial_skill_thr{thr}.nc"))
-        ds_det_cat_skills[thr] = ds_det_cat_skill
-
-        spatial_scales = [5]
-        ds_det_spatial_skills[thr] = {}
-        for spatial_scale in spatial_scales:
-            print("Spatial scale:", spatial_scale)
-            ds_det_spatial_skill = xverif.deterministic(
-                pred=ds_verification_format.chunk({"x": -1, "y": -1}),
-                obs=data_dynamic.sel(time=ds_verification_format.time).chunk({"x": -1, "y": -1}),
-                forecast_type="spatial",
-                aggregating_dim=["x", "y"],
-                thr=thr,
-                win_size=spatial_scale
-            )
-            ds_det_spatial_skill.to_netcdf((model_dir / "model_skills" / f"deterministic_spatial_skill_thr{thr}_scale{spatial_scale}.nc"))
-            ds_det_spatial_skills[thr][spatial_scale] = ds_det_spatial_skill
-
+    
     ##------------------------------------------------------------------------.
     ### - Create verification summary plots and maps
     print("========================================================================================")
     print("- Create verification summary plots and maps")
-    ds_cont_averaged_skill = ds_det_cont_skill.mean(dim=["y", "x"])
-    ds_cont_averaged_skill.to_netcdf(model_dir / "model_skills" / "deterministic_continuous_global_skill.nc")
-    
-    ds_cat_averaged_skills = {}
-    ds_spatial_averaged_skills = {}
-    for thr in ds_det_cat_skills:
-        ds_cat_averaged_skills[thr] = ds_det_cat_skills[thr].mean(dim=["y", "x"])
-        ds_cat_averaged_skills[thr].to_netcdf(model_dir / "model_skills" / f"deterministic_categorical_global_skill_thr{thr}_mean.nc")
-        
-        ds_spatial_averaged_skills[thr] = {}
-        for spatial_scale in ds_det_spatial_skills[thr]:
-            ds_spatial_averaged_skills[thr][spatial_scale] = ds_det_spatial_skills[thr][spatial_scale].mean(dim=["time"])
-            ds_spatial_averaged_skills[thr][spatial_scale].to_netcdf(model_dir / "model_skills" / f"deterministic_spatial_global_skill_thr{thr}_scale{spatial_scale}.nc")
-
-    print("RMSE:")
-    print(ds_cont_averaged_skill["feature"].sel(skill="RMSE").values)
-
-    for thr in ds_cat_averaged_skills:
-        print(f"\nCategorical and Spatial metrics for threshold {thr}\n")
-        print(f"F1@{thr}:")
-        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="F1").values)
-        print(f"ACC@{thr}:")
-        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="ACC").values)
-        print(f"CSI@{thr}:")
-        print(ds_cat_averaged_skills[thr]["feature"].sel(skill="CSI").values)
-        for spatial_scale in ds_spatial_averaged_skills[thr]:
-            print(f"FSS@{thr} threshold and @{spatial_scale} spatial scale:")
-            print(ds_spatial_averaged_skills[thr][spatial_scale]["feature"].sel(skill="FSS").values)
-
 
     # - Create skill vs. leadtime plots
     plot_averaged_skill(ds_cont_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
