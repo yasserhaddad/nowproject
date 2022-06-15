@@ -128,10 +128,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
-    # training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
-    # validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
+    training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
+    # training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
+    # validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
     # training_years = np.array(["2018-01-01T00:00", "2018-01-03T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-01-02T23:57:30"], dtype="M8[s]")
     test_events = create_test_events_time_range(test_events_path, freq="5min")
@@ -223,7 +223,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-{training_settings['epochs']}epochs-6months", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -359,7 +359,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ### Create plots related to training evolution
     print("========================================================================================")
     print("- Creating plots to investigate training evolution")
-    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.01))
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.1))
 
     ##-------------------------------------------------------------------------.
     ### - Create predictions
@@ -384,7 +384,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         scaler_inverse=scaler,
         # Dataloader options
         device=device,
-        batch_size=25,  # number of forecasts per batch
+        batch_size=20,  # number of forecasts per batch
         num_workers=dataloader_settings["num_workers"],
         prefetch_factor=dataloader_settings["prefetch_factor"],
         prefetch_in_gpu=dataloader_settings["prefetch_in_gpu"],
