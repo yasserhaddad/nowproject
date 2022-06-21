@@ -10,7 +10,7 @@ import dask
 import pandas as pd
 import xarray as xr
 import numpy as np
-from torch import optim
+from torch import default_generator, optim
 from torchinfo import summary
 
 from xforecasting.utils.io import get_ar_model_tensor_info
@@ -130,12 +130,12 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # Split data into train, test and validation set
     ## - Defining time split for training
-    # training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
-    # validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
-    training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
-    # training_years = np.array(["2018-01-01T00:00", "2018-01-03T23:57:30"], dtype="M8[s]")
-    # validation_years = np.array(["2021-01-01T00:00", "2021-01-02T23:57:30"], dtype="M8[s]")
+    training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
+    # training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
+    # validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
+    # training_years = np.array(["2018-01-01T00:00", "2018-01-31T23:57:30"], dtype="M8[s]")
+    # validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
     test_events = create_test_events_time_range(test_events_path, freq="5min")
 
     # - Split data sets
@@ -207,12 +207,12 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         )
     )
 
-    _ = summarize_model(
-        model=model,
-        input_size=tuple(tensor_info["input_shape"]["train"][1:]),
-        batch_size=training_settings["training_batch_size"],
-        device=device,
-    )
+    # _ = summarize_model(
+    #     model=model,
+    #     input_size=tuple(tensor_info["input_shape"]["train"][1:]),
+    #     batch_size=training_settings["training_batch_size"],
+    #     device=device,
+    # )
 
     # Generate the (new) model name and its directories
     if model_settings["model_name"] is not None:
@@ -225,7 +225,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-{training_settings['epochs']}epochs-6months", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedb5c4-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -241,8 +241,8 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     
     # criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
-    criterion = WeightedMSELoss(reduction="mean_masked", 
-                                weighted_truth=True, weights_params=(5, 1))
+    criterion = WeightedMSELoss(reduction="mean_masked",
+                                weighted_truth=True, weights_params=(5, 4))
     # criterion = LogCoshLoss(weighted_truth=True, weights_params=(5, 1))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
@@ -285,9 +285,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define Early Stopping
     ## - Used also to update ar_scheduler (aka increase AR iterations) if 'ar_iterations' not reached.
     patience = int(
-        2000 / training_settings["scoring_interval"]
+        4000 / training_settings["scoring_interval"]
     )  # with 1000 and lr 0.005 crashed without AR update !
-    minimum_iterations = 10000  # wtih 8000 worked
+    minimum_iterations = 10000 
     minimum_improvement = 0.0001
     stopping_metric = "validation_total_loss"  # training_total_loss
     mode = "min"  # MSE best when low
@@ -384,7 +384,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         scaler_inverse=scaler,
         # Dataloader options
         device=device,
-        batch_size=25,  # number of forecasts per batch
+        batch_size=10,  # number of forecasts per batch
         num_workers=dataloader_settings["num_workers"],
         prefetch_factor=dataloader_settings["prefetch_factor"],
         prefetch_in_gpu=dataloader_settings["prefetch_in_gpu"],
@@ -497,7 +497,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
                                  ds_forecast_event,
                                  data_dynamic,
                                  geodata=METADATA_CH,
-                                 suptitle_prefix="resConv64, Increment Learning, ")
+                                 suptitle_prefix=f"{model_settings['architecture_name']}, Increment Learning, ")
 
     print("   ---> Elapsed time: {:.1f} minutes ".format((time.time() - t_i) / 60))
     ##-------------------------------------------------------------------------.
@@ -518,8 +518,10 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
-    default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
+    # default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
+    # default_config = "/home/haddad/nowproject/configs/resConv/conv64_optical_flow.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
+    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
 
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
@@ -537,10 +539,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
-    if args.force == "True":
-        force = True
-    else:
-        force = False
 
     main(
         cfg_path=Path(args.config_file),
@@ -548,5 +546,5 @@ if __name__ == "__main__":
         static_data_path=Path(args.static_data_path),
         test_events_path=Path(args.test_events_file),
         data_dir_path=Path(args.data_dir),
-        force=force,
+        force=args.force == "True",
     )
