@@ -671,7 +671,7 @@ def AutoregressiveTraining(
                             early_stopping.reset()
                             # Print info
                             current_ar_training_info = "(epoch: {}, iteration: {}, total_iteration: {})".format(
-                                ar_training_info.epoch+1,
+                                ar_training_info.epoch,
                                 ar_training_info.epoch_iteration,
                                 ar_training_info.iteration,
                             )

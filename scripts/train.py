@@ -225,7 +225,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedb5c4-{training_settings['epochs']}epochs-1year", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c4-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -359,7 +359,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ### Create plots related to training evolution
     print("========================================================================================")
     print("- Creating plots to investigate training evolution")
-    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.04))
+    ar_training_info.plots(model_dir=model_dir, ylim=(0, 0.1))
 
     ##-------------------------------------------------------------------------.
     ### - Create predictions

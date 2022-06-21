@@ -12,14 +12,16 @@ def get_unique_counts(arr: np.ndarray):
     return np.array([dict(zip(unique, counts))], dtype="object")
 
 if __name__ == '__main__':
-    # client = Client(n_workers=15)
+    client = Client(n_workers=12)
     data_dir_path = Path("/ltenas3/0_Data/NowProject/")
-    data_stats_dir_path = data_dir_path / "stats"
+    data_stats_dir_path = data_dir_path / "stats_5min"
     data_stats_dir_path.mkdir(exist_ok=True)
 
     boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr",
-                                        boundaries=boundaries)
+                                        boundaries=boundaries,
+                                        timestep=5)
+    data_dynamic = data_dynamic.where(data_dynamic < 200.0, np.nan)
 
     print("Computing value counts...")
     t_i = time.time()
@@ -32,8 +34,8 @@ if __name__ == '__main__':
                              output_dtypes=["object"],
                              dask_gufunc_kwargs={'output_sizes': {'info': 1}}
                             )
-    
-    a = results.compute()
+    with ProgressBar():
+        a = results.compute()
 
     combined = {}
     for d in a.data.flatten():
@@ -46,12 +48,6 @@ if __name__ == '__main__':
     counts = pd.DataFrame.from_dict(combined, orient="index").reset_index()
     counts.columns = ["value", "count"]
     counts.to_csv(data_stats_dir_path / "counts_values.csv", index=False)
-    t_end = time.time()
-    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
-
-    print("Computing quantiles...")
-    t_i = time.time()
-    data_dynamic.quantile([0.75, 0.8, 0.9, 0.95, 0.98, 0.99]).to_netcdf(data_stats_dir_path / "quantiles.nc")
     t_end = time.time()
     print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
 
@@ -75,13 +71,13 @@ if __name__ == '__main__':
     print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
 
 
-    print("Computing monthly grid cell statistics...")
+    print("Computing yearly grid cell statistics...")
     t_i = time.time()
     mean_space_month = data_dynamic.groupby("time.year").mean(dim="time")\
                                    .rename({"feature": "mean"}).compute()
     max_space_month = data_dynamic.groupby("time.year").max(dim="time")\
                                   .rename({"feature": "max"}).compute()
-    xr.merge([mean_space_month, max_space_month]).to_netcdf(data_stats_dir_path / "stats_space_month.nc")
+    xr.merge([mean_space_month, max_space_month]).to_netcdf(data_stats_dir_path / "stats_space_year.nc")
     t_end = time.time()
     print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
 
