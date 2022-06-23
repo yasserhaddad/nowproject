@@ -285,9 +285,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define Early Stopping
     ## - Used also to update ar_scheduler (aka increase AR iterations) if 'ar_iterations' not reached.
     patience = int(
-        4000 / training_settings["scoring_interval"]
+        3000 / training_settings["scoring_interval"]
     )  # with 1000 and lr 0.005 crashed without AR update !
-    minimum_iterations = 10000 
+    minimum_iterations = 20000 
     minimum_improvement = 0.0001
     stopping_metric = "validation_total_loss"  # training_total_loss
     mode = "min"  # MSE best when low
@@ -521,7 +521,8 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_optical_flow.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
-    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
+    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
+    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-32.json"
 
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
