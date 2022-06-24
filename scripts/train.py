@@ -225,7 +225,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c4-{training_settings['epochs']}epochs-1year", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -239,11 +239,11 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # - Define custom loss function
     
-    # criterion = WeightedMSELoss(reduction="mean_masked")
+    criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
-    criterion = WeightedMSELoss(reduction="mean_masked",
-                                weighted_truth=True, weights_params=(5, 4))
-    # criterion = LogCoshLoss(weighted_truth=True, weights_params=(5, 1))
+    # criterion = WeightedMSELoss(reduction="mean_masked",
+    #                             weighted_truth=True, weights_params=(5, 4))
+    # criterion = LogCoshLoss(masked=True, weighted_truth=True, weights_params=(5, 4))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
 
@@ -285,9 +285,9 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # - Define Early Stopping
     ## - Used also to update ar_scheduler (aka increase AR iterations) if 'ar_iterations' not reached.
     patience = int(
-        4000 / training_settings["scoring_interval"]
+        3000 / training_settings["scoring_interval"]
     )  # with 1000 and lr 0.005 crashed without AR update !
-    minimum_iterations = 10000 
+    minimum_iterations = 20000 
     minimum_improvement = 0.0001
     stopping_metric = "validation_total_loss"  # training_total_loss
     mode = "min"  # MSE best when low
