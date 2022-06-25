@@ -28,7 +28,14 @@ from nowproject.utils.utils_models import (
     reshape_input_for_encoding
 )
 
-from nowproject.dl_models.layers_3d import DecoderMultiScale, DoubleConv, ExtResNetBlock, NoDownsampling, create_encoders_multiscale
+from nowproject.dl_models.layers_3d import (
+    DecoderMultiScale, 
+    DoubleConv, 
+    ExtResNetBlock, 
+    NoDownsampling, 
+    ResNetBlock, 
+    create_encoders_multiscale
+)
 from nowproject.dl_models.unet3d import Base3DUNet, number_of_features_per_level
 
 class UNet3D(Base3DUNet):
@@ -66,7 +73,7 @@ class ResidualUNet3D(Base3DUNet):
                  conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), **kwargs):
         super().__init__(tensor_info=tensor_info,
                         final_sigmoid=final_sigmoid,
-                        basic_module=ExtResNetBlock,
+                        basic_module=ResNetBlock,
                         f_maps=f_maps,
                         layer_order=layer_order,
                         num_groups=num_groups,
