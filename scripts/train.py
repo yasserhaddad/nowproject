@@ -224,11 +224,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-<<<<<<< HEAD
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-6months", 
-=======
         suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
->>>>>>> 0d058fa338b7bcde13bab088e8cf01ef9293b686
         force=force
     )  # force=True will delete existing directory
 
@@ -246,11 +242,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
     # criterion = WeightedMSELoss(reduction="mean_masked",
     #                             weighted_truth=True, weights_params=(5, 4))
-<<<<<<< HEAD
-    # criterion = LogCoshLoss(weighted_truth=True, weights_params=(5, 1))
-=======
     # criterion = LogCoshLoss(masked=True, weighted_truth=True, weights_params=(5, 4))
->>>>>>> 0d058fa338b7bcde13bab088e8cf01ef9293b686
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
 
