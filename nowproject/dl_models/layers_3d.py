@@ -1,4 +1,5 @@
 from functools import partial
+from turtle import forward
 
 import torch
 from torch import nn
@@ -56,26 +57,6 @@ def create_conv_3d(in_channels, out_channels, kernel_size, order, num_groups, pa
             raise ValueError(f"Unsupported layer type '{module}'. MUST be one of ['batchnorm', 'groupnorm', 'relu', 'leakyrelu', 'elu', 'conv']")
 
     return modules
-
-
-class ConvTranspose3DPadding(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, 
-                 stride=1, padding=0, output_padding=0, 
-                 bias=True, dilation=1, padding_mode='zeros'):
-        super().__init__()
-        self.conv_transpose = nn.ConvTranspose3d(in_channels,  out_channels, kernel_size=kernel_size, 
-                                                 stride=stride, padding=padding, output_padding=output_padding,
-                                                 bias=bias, dilation=dilation, padding_mode=padding_mode)
-
-    def forward(self, x1, x2):
-        x1 = self.conv_transpose(x1)
-        diffY = x2.size()[3] - x1.size()[3]
-        diffX = x2.size()[4] - x1.size()[4]
-
-        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                        diffY // 2, diffY - diffY // 2])
-
-        return x1
 
 
 class SingleConv(nn.Sequential):
@@ -332,6 +313,69 @@ def create_decoders(f_maps, basic_module, conv_kernel_size, conv_padding, layer_
     return nn.ModuleList(decoders)
 
 
+class DecoderMultiScale(nn.Module):
+    def __init__(self, in_channels, out_channels, conv_kernel_size=3, scale_factor=(2, 2, 2), basic_module=DoubleConv,
+                 conv_layer_order=("conv", "relu"), num_groups=8, mode='nearest', padding=1, upsample=True):
+        super().__init__()
+
+        if upsample:
+            if basic_module == DoubleConv:
+                # if DoubleConv is the basic_module use interpolation for upsampling and concatenation joining
+                self.upsampling = InterpolateUpsampling(mode=mode)
+            else:
+                # if basic_module=ExtResNetBlock use transposed convolution upsampling and summation joining
+                self.upsampling = TransposeConvUpsampling(in_channels=in_channels, out_channels=out_channels,
+                                                          kernel_size=conv_kernel_size, scale_factor=scale_factor)
+                # adapt the number of in_channels for the ExtResNetBlock
+                in_channels = out_channels
+            
+        else:
+            # no upsampling
+            self.upsampling = NoUpsampling()
+
+        self.basic_module = basic_module(in_channels, out_channels,
+                                         encoder=False,
+                                         kernel_size=conv_kernel_size,
+                                         order=conv_layer_order,
+                                         num_groups=num_groups,
+                                         padding=padding)
+
+    def forward(self, encoder_features, x):
+        x = self.upsampling(encoder_features=encoder_features, x=x)
+        x = self.basic_module(x)
+        return x
+
+def create_encoders_multiscale(in_channels, f_maps, basic_module, conv_kernel_size, conv_padding, layer_order, num_groups, upsample_last=False):
+    encoders_in = []
+    encoders_out = []
+    for i, out_feature_num in enumerate(f_maps):
+        input_channels = in_channels if i == 0 else f_maps[i - 1]
+        encoder = Encoder(input_channels, out_feature_num,
+                            apply_pooling=False, 
+                            basic_module=basic_module,
+                            conv_layer_order=layer_order,
+                            conv_kernel_size=conv_kernel_size,
+                            num_groups=num_groups,
+                            padding=conv_padding)
+
+        encoders_in.append(encoder)
+
+        if i > 0: 
+            if not upsample_last or i != 1:
+                encoder = Encoder(out_feature_num, input_channels,
+                                    apply_pooling=False, 
+                                    basic_module=basic_module,
+                                    conv_layer_order=layer_order,
+                                    conv_kernel_size=conv_kernel_size,
+                                    num_groups=num_groups,
+                                    padding=conv_padding)
+
+                encoders_out.append(encoder)
+
+    return nn.ModuleList(encoders_in + encoders_out[::-1])
+
+
+
 class AbstractUpsampling(nn.Module):
     """
     Abstract class for upsampling. A given implementation should upsample a given 5D input tensor using either
@@ -399,4 +443,12 @@ class NoUpsampling(AbstractUpsampling):
 
     @staticmethod
     def _no_upsampling(x, size):
+        return x
+
+
+class NoDownsampling(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
         return x

@@ -1,0 +1,64 @@
+{
+    "model_settings": {
+        "pretrained_model_name": null,
+        "model_name_prefix": null,
+        "model_name": "RNN-AR6-MultiScaleResidualConv-IncrementLearning",
+        "model_name_suffix": null,
+        "final_sigmoid": false, 
+        "f_maps": [16, 32, 64], 
+        "layer_order": ["groupnorm", "conv", "relu"],
+        "num_groups": 8, 
+        "num_levels": 3, 
+        "pooling_depth": 3,
+        "conv_padding": 1, 
+        "pool_kernel_size": [1, 2, 2],
+        "conv_kernel_size": 3,
+        "upsample_scale_factor": [1, 2, 2],
+        "pool_type": "max",
+        "increment_learning": "True",
+        "architecture_name": "MultiScaleResidualConv"
+    },
+    "dataloader_settings": {
+        "random_shuffling": true,
+        "drop_last_batch": false,
+        "prefetch_in_gpu": false,
+        "prefetch_factor": 2,
+        "pin_memory": false,
+        "asyncronous_gpu_transfer": true,
+        "num_workers": 8,
+        "autotune_num_workers": false
+    },
+    "training_settings": {
+        "epochs": 4,
+        "ar_training_strategy": "RNN",
+        "learning_rate": 0.001,
+        "training_batch_size": 8,
+        "validation_batch_size": 8,
+        "scoring_interval": 30,
+        "save_model_each_epoch": false,
+        "numeric_precision": "float32",
+        "deterministic_training": true,
+        "seed_model_weights": 10,
+        "seed_random_shuffling": 15,
+        "benchmark_cudnn": true,
+        "gpu_training": true,
+        "gpu_devices_ids": [
+            0
+        ],
+        "dataparallel_training": false
+    },
+    "ar_settings": {
+        "input_k": [
+            -4,
+            -3,
+            -2,
+            -1
+        ],
+        "output_k": [
+            0
+        ],
+        "forecast_cycle": 1,
+        "ar_iterations": 6,
+        "stack_most_recent_prediction": true
+    }
+}

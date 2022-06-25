@@ -10,7 +10,7 @@ from torch.nn import (
     ConvTranspose3d
 )
 import torch.nn.functional as F
-from torchvision.models.optical_flow import raft_large, raft_small
+# from torchvision.models.optical_flow import raft_large, raft_small
 from nowproject.utils.utils_models import (
     transform_data_for_raft,
     inverse_transform_data_for_raft,
