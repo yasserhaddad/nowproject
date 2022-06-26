@@ -14,7 +14,8 @@ import torch.nn.functional as F
 
 from nowproject.dl_models.layers_2d import (
     ConvBlock,
-    ResBlock
+    ResBlock,
+    Upsampling
 )
 
 from nowproject.models import UNetModel, ConvNetModel

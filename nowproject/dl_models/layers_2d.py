@@ -8,6 +8,16 @@ from torch.nn import (
     Upsample,
 )
 import torch.nn.functional as F
+<<<<<<< HEAD:nowproject/dl_models/layers_2d.py
+=======
+# from torchvision.models.optical_flow import raft_large, raft_small
+from nowproject.utils.utils_models import (
+    transform_data_for_raft,
+    inverse_transform_data_for_raft,
+    flow_warp,
+    check_data_for_raft
+)
+>>>>>>> f9570d2feead5a265f1834f4a85dac20f6f248be:nowproject/layers.py
 
 #Complex multiplication
 class SpectralConv2d_fast(nn.Module):

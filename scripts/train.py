@@ -40,7 +40,7 @@ from nowproject.utils.config import (
 
 from nowproject.utils.verification import verification_routine
 
-from xverif import xverif
+# from xverif import xverif
 
 # Project specific functions
 from torch import nn
@@ -107,14 +107,14 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries, 
-                                        timestep=5)
+                                        timestep=10)
     # data_static = load_static_topo_data(static_data_path, data_dynamic)
     data_static = None
 
     patch_size = 128
     data_patches = prepare_data_patches(data_dir_path / "rzc_cropped_patches_fixed.parquet",
                                         patch_size=patch_size,
-                                        timestep=5)
+                                        timestep=10)
     data_bc = None
 
     ##------------------------------------------------------------------------.
@@ -165,7 +165,6 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ## - Here inside eventually set the seed for fixing model weights initialization
     ## - Here inside the training precision is set (currently only float32 works)
     device = set_pytorch_settings(training_settings)
-
     ##------------------------------------------------------------------------.
     # Retrieve dimension info of input-output Torch Tensors
     tensor_info = get_ar_model_tensor_info(
@@ -225,7 +224,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
+        suffix=f"10mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -287,7 +286,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     patience = int(
         3000 / training_settings["scoring_interval"]
     )  # with 1000 and lr 0.005 crashed without AR update !
-    minimum_iterations = 20000 
+    minimum_iterations = 10000 
     minimum_improvement = 0.0001
     stopping_metric = "validation_total_loss"  # training_total_loss
     mode = "min"  # MSE best when low
@@ -395,7 +394,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         output_k=ar_settings["output_k"],
         forecast_cycle=ar_settings["forecast_cycle"],
         stack_most_recent_prediction=ar_settings["stack_most_recent_prediction"],
-        ar_iterations=11,  # How many time to autoregressive iterate
+        ar_iterations=5,  # How many time to autoregressive iterate
         # Save options
         zarr_fpath=forecast_zarr_fpath.as_posix(),  # None --> do not write to disk
         rounding=2,  # Default None. Accept also a dictionary

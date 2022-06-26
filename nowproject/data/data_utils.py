@@ -54,9 +54,15 @@ def prepare_data_dynamic(data_dynamic_path: pathlib.Path, boundaries: dict = Non
         ["radar_names", "radar_quality", "radar_availability"], 
         drop=True
         )
-    if timestep and timestep == 5:
-        data_dynamic = data_dynamic.sel(time=(data_dynamic.time.dt.minute % timestep == 0))
     data_dynamic = data_dynamic.sel(time=slice(None, "2021-09-01T00:00"))
+    if timestep:
+        t = pd.date_range(start=data_dynamic.time.values[0], 
+                            end=data_dynamic.time.values[-1], 
+                            freq=f"{timestep}min")
+        t = np.intersect1d(t, data_dynamic.time.values)
+        data_dynamic = data_dynamic.sel(time=t)
+        # data_dynamic = data_dynamic.sel(time=(data_dynamic.time.dt.minute % timestep == 0))
+    
     data_dynamic = data_dynamic.rename({"precip": "feature"})[["feature"]]
     data_dynamic = data_dynamic.where(((data_dynamic > 0.04) | data_dynamic.isnull()), 0.0)
     if flip:
@@ -70,7 +76,12 @@ def prepare_data_patches(data_patches_path: pathlib.Path, patch_size: int, times
     data_patches = pd.read_parquet(data_patches_path)
     data_patches = data_patches.groupby("time")["upper_left_idx"].apply(lambda x: ', '.join(x)).to_xarray()
     if timestep:
-        data_patches = data_patches[data_patches.time.dt.minute % timestep == 0]
+        t = pd.date_range(start=data_patches.time.values[0], 
+                            end=data_patches.time.values[-1], 
+                            freq=f"{timestep}min")
+        t = np.intersect1d(t, data_patches.time.values)
+        data_patches = data_patches.sel(time=t)
+        # data_patches = data_patches[data_patches.time.dt.minute % timestep == 0]
     data_patches = data_patches.assign_attrs({"patch_size": patch_size})
 
     return data_patches

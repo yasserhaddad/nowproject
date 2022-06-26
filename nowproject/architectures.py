@@ -30,8 +30,15 @@ from nowproject.utils.utils_models import (
     reshape_input_for_encoding
 )
 
-from nowproject.dl_models.layers_3d import DoubleConv, ExtResNetBlock, ResNetBlock
-from nowproject.dl_models.unet3d import Base3DUNet
+from nowproject.dl_models.layers_3d import (
+    DecoderMultiScale, 
+    DoubleConv, 
+    ExtResNetBlock, 
+    NoDownsampling, 
+    ResNetBlock, 
+    create_encoders_multiscale
+)
+from nowproject.dl_models.unet3d import Base3DUNet, number_of_features_per_level
 
 class UNet3D(Base3DUNet):
     """
@@ -79,6 +86,127 @@ class ResidualUNet3D(Base3DUNet):
                         conv_kernel_size=conv_kernel_size,
                         upsample_scale_factor=upsample_scale_factor,
                         **kwargs)
+
+
+class MultiScaleResidualConv(nn.Module):
+    def __init__(self, tensor_info, f_maps=64, layer_order=("conv", "relu"), basic_module=ExtResNetBlock,
+                 num_groups=8, num_levels=3, conv_padding=1, pooling_depth=2, pool_kernel_size=(1, 2, 2), 
+                 conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), final_conv_kernel=(4, 1, 1), 
+                 increment_learning=True, pool_type="max"):
+        
+        super().__init__()
+
+        self.dim_names = tensor_info["dim_order"]["dynamic"]
+        self.input_feature_dim = tensor_info["input_n_feature"]
+        self.input_time_dim = tensor_info["input_n_time"]
+        self.input_train_y_dim = tensor_info["input_shape_info"]["train"]["dynamic"]["y"]
+        self.input_train_x_dim = tensor_info["input_shape_info"]["train"]["dynamic"]["x"]
+        self.input_test_y_dim = tensor_info["input_shape_info"]["test"]["dynamic"]["y"]
+        self.input_test_x_dim = tensor_info["input_shape_info"]["test"]["dynamic"]["x"]
+
+        self.output_time_dim = tensor_info["output_n_time"]
+        self.output_feature_dim = tensor_info["output_n_feature"]
+        self.output_train_y_dim = tensor_info["output_shape_info"]["train"]["dynamic"]["y"]
+        self.output_train_x_dim = tensor_info["output_shape_info"]["train"]["dynamic"]["x"]
+        self.output_test_y_dim = tensor_info["output_shape_info"]["test"]["dynamic"]["y"]
+        self.output_test_x_dim = tensor_info["output_shape_info"]["test"]["dynamic"]["x"]
+
+        self.input_channels = self.input_feature_dim 
+        self.output_channels = self.output_feature_dim
+
+        self.pooling = nn.ModuleList()
+        for i in range(pooling_depth):
+            if i == 0: self.pooling.append(nn.ModuleList([NoDownsampling()]))
+            else:
+                if pool_type == 'max':
+                    self.pooling.append(nn.ModuleList([
+                                    nn.MaxPool3d(kernel_size=pool_kernel_size) for i in range(1, i+1)
+                                    ]))
+                else:
+                    self.pooling.append(nn.ModuleList([
+                                    nn.AvgPool3d(kernel_size=pool_kernel_size) for i in range(1, i+1)
+                                    ]))
+
+
+        if isinstance(f_maps, int):
+            f_maps = number_of_features_per_level(f_maps, num_levels=num_levels)
+            
+        # create multi-scale encoders-decoders
+        self.encoders = nn.ModuleList()
+        for i in range(pooling_depth):
+            self.encoders.append(create_encoders_multiscale(self.input_channels, f_maps, basic_module, conv_kernel_size, conv_padding, 
+                                                            layer_order, num_groups, upsample_last=(i!=0)))
+        
+        self.decoders = nn.ModuleList()
+        for i in range(1, pooling_depth):
+            decoder_list = nn.ModuleList()
+            for j in range(i):
+                input_channels = f_maps[1] if j == 0 else f_maps[0]
+                decoder_list.append(DecoderMultiScale(input_channels, f_maps[0],
+                                                    basic_module=basic_module,
+                                                    conv_layer_order=layer_order,
+                                                    conv_kernel_size=conv_kernel_size,
+                                                    num_groups=num_groups,
+                                                    padding=conv_padding,
+                                                    upsample=True,
+                                                    scale_factor=upsample_scale_factor))
+            self.decoders.append(decoder_list)
+
+        # in the last layer a 1×1 convolution reduces the number of output
+        # channels to the number of labels
+        self.final_conv = nn.Conv3d(f_maps[0], self.output_channels, final_conv_kernel)
+        # self.final_conv = nn.Conv1d(f_maps[0], self.output_channels, final_conv_kernel)
+        
+        ##--------------------------------------------------------------------.
+        # Decide whether to predict the difference from the previous timestep
+        #  instead of the full state
+        self.increment_learning = increment_learning
+        if self.increment_learning:
+            self.res_increment = nn.Parameter(torch.zeros(1), requires_grad=True)
+
+    def forward(self, x, training=True):
+        self.batch_size = x.shape[0]
+        input_y_dim = self.input_train_y_dim if training else self.input_test_y_dim
+        input_x_dim = self.input_train_x_dim if training else self.input_test_x_dim
+
+        ##--------------------------------------------------------------------.
+        # Reorder and reshape data
+        x = reshape_input_for_encoding(x, self.dim_names, 
+                                    [self.batch_size, self.input_feature_dim, self.input_time_dim, 
+                                    input_y_dim, input_x_dim])
+
+        ## Extract last timestep (to add after decoding) to make the network learn the increment
+        self.x_last_timestep = x[:, -1:, -1, :, :].reshape(self.batch_size, input_y_dim, input_x_dim, 1)\
+                                                    .unsqueeze(dim=1)
+        
+        encoder_features = []
+        for i in range(len(self.pooling)):
+            x_f = x
+            for pool_layer in self.pooling[i]:
+                x_f = pool_layer(x_f)
+            for encoding_layer in self.encoders[i]:
+                x_f = encoding_layer(x_f)
+            encoder_features.append(x_f)
+
+
+        for i, decoder in enumerate(self.decoders):
+            for j in range(len(decoder)):
+                encoder_features[i+1] = decoder[j](encoder_features[i-j], encoder_features[i+1])
+        
+        x = torch.stack(encoder_features).sum(dim=0)
+        x = self.final_conv(x)
+
+        output_y_dim = self.output_train_y_dim if training else self.output_test_y_dim
+        output_x_dim = self.output_train_x_dim if training else self.output_test_x_dim
+        x = reshape_input_for_decoding(x, self.dim_names, 
+                                       [self.batch_size, self.output_time_dim, output_y_dim, 
+                                       output_x_dim, self.output_feature_dim])
+
+        if self.increment_learning:
+            x *= self.res_increment 
+            x += self.x_last_timestep
+
+        return x
 
 
 class resConv(nn.Module):
