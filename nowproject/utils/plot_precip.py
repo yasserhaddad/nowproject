@@ -1,6 +1,7 @@
 from re import M
 from typing import Tuple, Union
 import matplotlib
+from matplotlib.patches import Rectangle
 import pyproj
 import numpy as np
 import xarray as xr

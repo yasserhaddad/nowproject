@@ -15,6 +15,7 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.colors 
+import matplotlib.patches as mpatches
 from nowproject.dev.utils_patches import (
     get_areas_labels,
     get_patch_per_label,
@@ -28,11 +29,13 @@ zarr_dir_path = pathlib.Path("/ltenas3/0_Data/NowProject/zarr/")
 # ds = xr.open_zarr(zarr_dir_path / "rzc_temporal_chunk.zarr")
 boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
 ds = prepare_data_dynamic(zarr_dir_path / "rzc_temporal_chunk.zarr",
-                          boundaries=boundaries)
+                          boundaries=boundaries,
+                          timestep=5)
 # ds_masked = ds.sel({"y": list(range(850, 450, -1)), "x": list(range(30, 320))})
 
 # DEV 
-data_array = ds['feature'].sel(time="2016-01-01T00:00:00")
+# data_array = ds['feature'].sel(time="2016-01-01T00:00:00")
+data_array = ds['feature'].sel(time="2018-03-22T15:30:00")
 # data_array = ds['precip'].isel(time=0)
  
 # Plot
@@ -78,9 +81,23 @@ labels = da_labels.data
 da_labels.plot.imshow(cmap="Spectral", vmin=1, interpolation="none")
 plt.show()
 
-plt.imshow(labels, cmap=cmap, vmin=1, interpolation="none")
-plt.colorbar()
+fig, ax = plt.subplots(figsize=(8, 5))
+im = plt.imshow(labels, cmap=cmap, vmin=1, interpolation="none")
+
+values = np.unique(labels.ravel())
+# get the colors of the values, according to the 
+# colormap used by imshow
+colors = [im.cmap(im.norm(value)) for value in values]
+# create a patch (proxy artist) for every color 
+legends = ["No precipitation" if value == 0 else f"Patch {value}" for value in values]
+patches = [ mpatches.Patch(color=colors[i], label=legends[i]) for i in range(len(values)) ]
+# put those patched as legend-handles into the legend
+plt.legend(handles=patches, loc=4)
+plt.grid(None)
+ax.set_axis_off()
+plt.title(f"Patches extracted for observation at time : {str(data_array.time.values.astype('datetime64[s]'))}")
 plt.show()
+plt.savefig("")
 
 labels
 np.arange(1, n_labels+1)

@@ -1,7 +1,11 @@
+import calendar
 import pathlib
+
+import numpy as np
 import xarray as xr
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.colors
 
 from PIL import Image
 from typing import List, Tuple, Union
@@ -10,6 +14,36 @@ from pysteps.visualization.utils import proj4_to_cartopy
 from pysteps.visualization.precipfields import get_colormap
 from matplotlib import colors
 from matplotlib.colors import Normalize
+
+from skimage.morphology import square
+import matplotlib.patches as mpatches
+from nowproject.data.patches_utils import (
+    get_areas_labels,
+    get_patch_per_label,
+    patch_stats_fun,
+    xr_get_areas_labels,
+    get_slice_size,
+)
+
+class FixPointNormalize(matplotlib.colors.Normalize):
+    """ 
+    Inspired by https://stackoverflow.com/questions/20144529/shifted-colorbar-matplotlib
+    Subclassing Normalize to obtain a colormap with a fixpoint 
+    somewhere in the middle of the colormap.
+    This may be useful for a `terrain` map, to set the "sea level" 
+    to a color in the blue/turquise range. 
+    """
+    def __init__(self, vmin=None, vmax=None, sealevel=0, col_val = 0.21875, clip=False):
+        # sealevel is the fix point of the colormap (in data units)
+        self.sealevel = sealevel
+        # col_val is the color value in the range [0,1] that should represent the sealevel.
+        self.col_val = col_val
+        matplotlib.colors.Normalize.__init__(self, vmin, vmax, clip)
+
+    def __call__(self, value, clip=None):
+        x, y = [self.vmin, self.sealevel, self.vmax], [0, self.col_val, 1]
+        return np.ma.masked_array(np.interp(value, x, y))
+
 
 def rescale_spatial_axes(ds: Union[xr.Dataset, xr.DataArray],
                          spatial_dims: List[str] = ["y", "x"],
@@ -30,12 +64,103 @@ def get_colormap_error():
     return cmap, norm, clevs, clevs_str
 
 
+def plot_patches(figs_dir: pathlib.Path,
+                 da_obs: xr.DataArray):
+
+    intensity = da_obs.data.copy() 
+    min_intensity_threshold = 0.1
+    max_intensity_threshold = 300
+    min_area_threshold = 36
+    max_area_threshold = np.Inf
+    
+    footprint_buffer = square(10)
+    
+    patch_size = (128,128)
+    centered_on = "centroid"
+    mask_value = 0
+
+    da_labels, n_labels, counts = xr_get_areas_labels(da_obs,  
+                                                        min_intensity_threshold=min_intensity_threshold, 
+                                                        max_intensity_threshold=max_intensity_threshold, 
+                                                        min_area_threshold=min_area_threshold, 
+                                                        max_area_threshold=max_area_threshold, 
+                                                        footprint_buffer=footprint_buffer)
+
+    labels = da_labels.data
+    list_patch_slices, patch_statistics = get_patch_per_label(labels, 
+                                                            intensity, 
+                                                            patch_size = patch_size, 
+                                                            # centered_on = "max",
+                                                            # centered_on = "centroid",
+                                                            centered_on = "center_of_mass",
+                                                            patch_stats_fun = patch_stats_fun, 
+                                                            mask_value = mask_value, 
+                                                            )
+
+    cmap, norm, clevs, clevs_str = get_colormap("intensity", "mm/h", "pysteps")
+
+    ref_time = str(da_obs.time.values.astype('datetime64[s]'))
+    cbar_kwargs = {
+        "ticks": clevs,
+        "spacing": "uniform",
+        "extend": "max",
+        "shrink": 0.9
+    }
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+    p = da_obs.plot.imshow(ax=ax, norm=norm, cmap=cmap, add_colorbar=True, cbar_kwargs=cbar_kwargs)
+    p.colorbar.ax.set_yticklabels(clevs_str)
+    p.colorbar.set_label(f"Precipitation intensity (mm/h)")
+    ax.set_title(f"Observation at time : {ref_time}")
+    ax.set_axis_off()
+    plt.savefig(figs_dir / "observation.png", dpi=300, bbox_inches='tight')
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    cmap_qualitative = plt.get_cmap("Spectral")
+    cmap_qualitative.set_under(color="white")
+    im = plt.imshow(labels, vmin=1, cmap=cmap_qualitative, interpolation="none")
+
+    values = np.unique(labels.ravel())
+    colors = [im.cmap(im.norm(value)) for value in values]
+    legends = ["No precipitation" if value == 0 else f"Event {value}" for value in values]
+    patches = [mpatches.Patch(color=colors[i], label=legends[i]) for i in range(len(values)) ]
+    plt.legend(handles=patches, loc=4)
+    plt.grid(None)
+    ax.set_axis_off()
+    plt.title(f"Precipitation events detected at time : {ref_time}")
+    plt.savefig(figs_dir / "precipitation_events.png", dpi=300, bbox_inches='tight')
+
+    list_patch_upper_left_idx = [[slc.start for slc in list_slc] for list_slc in list_patch_slices]
+    list_patch_upper_left_idx
+
+    cbar_kwargs = {
+        "ticks": clevs,
+        "spacing": "uniform",
+        "extend": "max",
+        "shrink": 0.8
+    }
+    # Plot all bounding boxes 
+    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    p = plt.imshow(intensity, norm=norm, cmap=cmap)
+    cb = plt.colorbar(ax=ax, **cbar_kwargs)
+    cb.ax.set_yticklabels(clevs_str)
+    cb.set_label(f"Precipitation intensity (mm/h)")
+    for y, x in list_patch_upper_left_idx:
+        rect = plt.Rectangle((x, y), patch_size[0], patch_size[0], linewidth=1, edgecolor='r', facecolor='none')
+        ax.add_patch(rect)
+    ax.set_title(f"Patches extracted at time : {ref_time}")
+    ax.set_axis_off()
+    plt.savefig(figs_dir / "patches.png", dpi=300, bbox_inches='tight')
+
+
+
 def plot_obs(figs_dir: pathlib.Path,
              ds_obs: xr.Dataset,
              geodata: dict = None,
              bbox: Tuple[int] = None,
              save_gif: bool = True,
              fps: int = 4,
+             figsize=(8, 5)
             ):
     
     figs_dir.mkdir(exist_ok=True)
@@ -55,7 +180,7 @@ def plot_obs(figs_dir: pathlib.Path,
         
         # Plot obs 
         title = "RZC, Time: {}".format(time_str)
-        ax = plot_single_precip(tmp_obs, geodata=geodata, title=title)
+        ax, p = plot_single_precip(tmp_obs, geodata=geodata, title=title, figsize=figsize)
 
         plt.savefig(filepath, dpi=300, bbox_inches='tight')
         if save_gif:
@@ -72,6 +197,53 @@ def plot_obs(figs_dir: pathlib.Path,
             duration=1 / fps * 1000,  # ms
             loop=False,
         )
+
+
+def plot_stats_map(figs_dir: pathlib.Path, 
+                   ds_stats: xr.Dataset, 
+                   geodata: dict = None,
+                   figsize=(8, 5),
+                   time_coord="month",
+                   save_gif: bool = True,
+                   fps: int = 4,
+                   title_prefix=None,
+                   ):
+    figs_dir.mkdir(exist_ok=True)
+    (figs_dir / "tmp").mkdir(exist_ok=True)
+
+    ds_stats = rescale_spatial_axes(ds_stats.load(), scale_factor=1000)
+    vars = list(ds_stats.data_vars.keys())
+    pil_frames = []
+
+    for var in vars:
+        for i, time in enumerate(ds_stats[time_coord].values):
+            filepath = figs_dir / "tmp" / f"{var}_{time}.png"
+            ##---------------------------------------------------------------------.
+            # Plot each variable
+            tmp_obs = ds_stats[var].isel({time_coord: i})
+            
+            # Plot obs 
+            title = f"{title_prefix}, {var.capitalize()}" if title_prefix else f"{var.capitalize()}"
+            if time_coord == "month":
+                title += f", {calendar.month_name[time]}"
+            else:
+                title += f", {time}"
+            ax = plot_single_precip(tmp_obs, geodata=geodata, title=title, figsize=figsize)
+
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            if save_gif:
+                pil_frames.append(Image.open(filepath).convert("P",palette=Image.ADAPTIVE))
+    
+
+        if save_gif:
+            pil_frames[0].save(
+                figs_dir / f"{var}.gif",
+                format="gif",
+                save_all=True,
+                append_images=pil_frames[1:],
+                duration=1 / fps * 1000,  # ms
+                loop=False,
+            )
 
 
 def plot_forecast_error_comparison(figs_dir: pathlib.Path,
