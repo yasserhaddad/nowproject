@@ -12,16 +12,17 @@ from torch.nn import (
 )
 import torch.nn.functional as F
 
-from nowproject.layers import (
-    ConvBlock,
-    RAFTOpticalFlow,
-    ResBlock, 
-    Upsampling,
-    UpsamplingResConv,
+from nowproject.dl_models.layers_res_conv import (
+    upsampling,
     downsampling,
     upsamplingLast,
+    UpsamplingResConv
+)
+
+from nowproject.dl_models.layers_optical_flow import (
     RAFTOpticalFlow
 )
+
 from nowproject.models import UNetModel, ConvNetModel
 from nowproject.utils.utils_models import (
     check_skip_connection,
