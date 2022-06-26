@@ -12,14 +12,17 @@ from torch.nn import (
 )
 import torch.nn.functional as F
 
-from nowproject.layers import (
-    ConvBlock,
-    ResBlock, 
-    Upsampling,
-    UpsamplingResConv,
+from nowproject.dl_models.layers_res_conv import (
+    upsampling,
     downsampling,
-    upsamplingLast
+    upsamplingLast,
+    UpsamplingResConv
 )
+
+from nowproject.dl_models.layers_optical_flow import (
+    RAFTOpticalFlow
+)
+
 from nowproject.models import UNetModel, ConvNetModel
 from nowproject.utils.utils_models import (
     check_skip_connection,
@@ -27,76 +30,72 @@ from nowproject.utils.utils_models import (
     reshape_input_for_encoding
 )
 
+from nowproject.dl_models.layers_3d import (
+    DecoderMultiScale, 
+    DoubleConv, 
+    ExtResNetBlock, 
+    NoDownsampling, 
+    ResNetBlock, 
+    create_encoders_multiscale
+)
+from nowproject.dl_models.unet3d import Base3DUNet, number_of_features_per_level
 
-##----------------------------------------------------------------------------.
-class UNet(UNetModel, torch.nn.Module):
-    """UNet with residual layers.
-
-    Parameters
-    ----------
-    tensor_info: dict
-        Dictionary with all relevant shape, dimension and feature order informations
-        regarding input and output tensors.
-    kernel_size_conv : int
-        Size ("width") of the square convolutional kernel.
-        The number of pixels of the kernel is kernel_size_conv**2
-    bias : bool, optional
-        Whether to add bias parameters. The default is True.
-        If batch_norm = True, bias is set to False.
-    batch_norm : bool, optional
-        Wheter to use batch normalization. The default is False.
-    batch_norm_before_activation : bool, optional
-        Whether to apply the batch norm before or after the activation function.
-        The default is False.
-    activation : bool, optional
-        Whether to apply an activation function. The default is True.
-    activation_fun : str, optional
-        Name of an activation function implemented in torch.nn.functional
-        The default is 'relu'.
-    pool_method : str, optional
-        Pooling method. Either 'max' or 'avg'
-    kernel_size_pooling : int, optional
-        The size of the window to max/avg over.
-        kernel_size_pooling = 4 means halving the resolution when pooling.
-        The default is 4.
-    skip_connection : str, optional
-        Possibilities: 'none','stack','sum','avg'
-        The default is 'stack.
-    increment_learning: bool, optional
-        If increment_learning = True, the network is forced internally to learn the increment
-        from the previous timestep.
-        If increment_learning = False, the network learn the full state.
-        The default is False.
+class UNet3D(Base3DUNet):
+    """
+    3DUnet model from
+    `"3D U-Net: Learning Dense Volumetric Segmentation from Sparse Annotation"
+        <https://arxiv.org/pdf/1606.06650.pdf>`.
+    Uses `DoubleConv` as a basic_module and nearest neighbor upsampling in the decoder
     """
 
-    def __init__(
-        self,
-        tensor_info: Dict,
-        # Convolutions options
-        kernel_size_conv: int = 3,  
-        padding: str = "valid",
-        # ConvBlock Options
-        bias: bool = True,
-        batch_norm: bool = True,
-        batch_norm_before_activation: bool = True,
-        activation: bool = True,
-        activation_fun: str = "relu",
-        last_layer_activation: bool = False,
-        conv_type: str = "regular",
-        # Pooling options
-        pool_method: str = "max",
-        kernel_size_pooling: int = 2,
-        # Architecture options
-        skip_connection: str = "stack",
-        increment_learning: bool = False,
-        # Output options
-        # categorical: bool = False
-    ):
-        ##--------------------------------------------------------------------.
+    def __init__(self, tensor_info, final_sigmoid=False, f_maps=64, layer_order=("conv", "relu"),
+                 num_groups=8, num_levels=4, is_segmentation=False, conv_padding=1, **kwargs):
+        super(UNet3D, self).__init__(tensor_info=tensor_info,
+                                     final_sigmoid=final_sigmoid,
+                                     basic_module=DoubleConv,
+                                     f_maps=f_maps,
+                                     layer_order=layer_order,
+                                     num_groups=num_groups,
+                                     num_levels=num_levels,
+                                     is_segmentation=is_segmentation,
+                                     conv_padding=conv_padding,
+                                     **kwargs)
+
+
+class ResidualUNet3D(Base3DUNet):
+    """
+    Residual 3DUnet model implementation based on https://arxiv.org/pdf/1706.00120.pdf.
+    Uses ExtResNetBlock as a basic building block, summation joining instead
+    of concatenation joining and transposed convolutions for upsampling (watch out for block artifacts).
+    Since the model effectively becomes a residual net, in theory it allows for deeper UNet.
+    """
+
+    def __init__(self, tensor_info, final_sigmoid=False, f_maps=64, layer_order=("conv", "relu"),
+                 num_groups=8, num_levels=5, is_segmentation=False, conv_padding=1, pool_kernel_size=(1, 2, 2), 
+                 conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), **kwargs):
+        super().__init__(tensor_info=tensor_info,
+                        final_sigmoid=final_sigmoid,
+                        basic_module=ResNetBlock,
+                        f_maps=f_maps,
+                        layer_order=layer_order,
+                        num_groups=num_groups,
+                        num_levels=num_levels,
+                        is_segmentation=is_segmentation,
+                        conv_padding=conv_padding,
+                        pool_kernel_size=pool_kernel_size,
+                        conv_kernel_size=conv_kernel_size,
+                        upsample_scale_factor=upsample_scale_factor,
+                        **kwargs)
+
+
+class MultiScaleResidualConv(nn.Module):
+    def __init__(self, tensor_info, f_maps=64, layer_order=("conv", "relu"), basic_module=ExtResNetBlock,
+                 num_groups=8, num_levels=3, conv_padding=1, pooling_depth=2, pool_kernel_size=(1, 2, 2), 
+                 conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), final_conv_kernel=(4, 1, 1), 
+                 increment_learning=True, pool_type="max"):
+        
         super().__init__()
-        # self.categorical = categorical
-        ##--------------------------------------------------------------------.
-        # Retrieve tensor informations
+
         self.dim_names = tensor_info["dim_order"]["dynamic"]
         self.input_feature_dim = tensor_info["input_n_feature"]
         self.input_time_dim = tensor_info["input_n_time"]
@@ -112,399 +111,100 @@ class UNet(UNetModel, torch.nn.Module):
         self.output_test_y_dim = tensor_info["output_shape_info"]["test"]["dynamic"]["y"]
         self.output_test_x_dim = tensor_info["output_shape_info"]["test"]["dynamic"]["x"]
 
-        ##--------------------------------------------------------------------.
-        # Define size of last dimension for ConvChen conv (merging time-feature dimension)
-        # TODO: to redefine based if applying Conv2D or Conv3D 
-        self.input_channels = self.input_feature_dim * self.input_time_dim
-        self.output_channels = self.output_feature_dim * self.output_time_dim
+        self.input_channels = self.input_feature_dim 
+        self.output_channels = self.output_feature_dim
 
+        self.pooling = nn.ModuleList()
+        for i in range(pooling_depth):
+            if i == 0: self.pooling.append(nn.ModuleList([NoDownsampling()]))
+            else:
+                if pool_type == 'max':
+                    self.pooling.append(nn.ModuleList([
+                                    nn.MaxPool3d(kernel_size=pool_kernel_size) for i in range(1, i+1)
+                                    ]))
+                else:
+                    self.pooling.append(nn.ModuleList([
+                                    nn.AvgPool3d(kernel_size=pool_kernel_size) for i in range(1, i+1)
+                                    ]))
+
+
+        if isinstance(f_maps, int):
+            f_maps = number_of_features_per_level(f_maps, num_levels=num_levels)
+            
+        # create multi-scale encoders-decoders
+        self.encoders = nn.ModuleList()
+        for i in range(pooling_depth):
+            self.encoders.append(create_encoders_multiscale(self.input_channels, f_maps, basic_module, conv_kernel_size, conv_padding, 
+                                                            layer_order, num_groups, upsample_last=(i!=0)))
+        
+        self.decoders = nn.ModuleList()
+        for i in range(1, pooling_depth):
+            decoder_list = nn.ModuleList()
+            for j in range(i):
+                input_channels = f_maps[1] if j == 0 else f_maps[0]
+                decoder_list.append(DecoderMultiScale(input_channels, f_maps[0],
+                                                    basic_module=basic_module,
+                                                    conv_layer_order=layer_order,
+                                                    conv_kernel_size=conv_kernel_size,
+                                                    num_groups=num_groups,
+                                                    padding=conv_padding,
+                                                    upsample=True,
+                                                    scale_factor=upsample_scale_factor))
+            self.decoders.append(decoder_list)
+
+        # in the last layer a 1×1 convolution reduces the number of output
+        # channels to the number of labels
+        self.final_conv = nn.Conv3d(f_maps[0], self.output_channels, final_conv_kernel)
+        # self.final_conv = nn.Conv1d(f_maps[0], self.output_channels, final_conv_kernel)
+        
         ##--------------------------------------------------------------------.
         # Decide whether to predict the difference from the previous timestep
         #  instead of the full state
         self.increment_learning = increment_learning
-
-        ##--------------------------------------------------------------------.
-        ### Check arguments
-        pool_method = pool_method.lower()
-        skip_connection = check_skip_connection(skip_connection)
-
-        ##--------------------------------------------------------------------.
-        ### Define ConvBlock options
-        convblock_kwargs = {
-            "conv_type": conv_type,
-            "kernel_size": kernel_size_conv,
-            "bias": bias,
-            "batch_norm": batch_norm,
-            "batch_norm_before_activation": batch_norm_before_activation,
-            "activation": activation,
-            "activation_fun": activation_fun,
-            "padding": 1,
-            "padding_mode": "reflect",
-            "modes1": self.input_train_y_dim//2 + 1,
-            "modes2": self.input_train_x_dim //2 + 1
-        }
-       
-        ##--------------------------------------------------------------------.
-        ### Define Pooling - Unpooling layers
-        if pool_method == "avg":
-            self.pool1 = AvgPool2d(kernel_size_pooling)
-            self.pool2 = AvgPool2d(kernel_size_pooling)
-        elif pool_method == "max":
-            self.pool1 = MaxPool2d(kernel_size_pooling)
-            self.pool2 = MaxPool2d(kernel_size_pooling)
-        
-        self.unpool1 = Upsample(scale_factor=kernel_size_pooling, mode='bilinear', align_corners=True)
-        self.unpool2 = Upsample(scale_factor=kernel_size_pooling, mode='bilinear', align_corners=True)
-        
-        ##--------------------------------------------------------------------.
-        ### Define Encoding blocks
-        # Encoding block 1
-        self.conv1 = ResBlock(
-            self.input_channels,
-            (32 * 2, 64 * 2),
-            convblock_kwargs=convblock_kwargs,
-        )
-
-        # Encoding block 2
-        self.conv2 = ResBlock(
-            64 * 2,
-            (96 * 2, 128 * 2),
-            convblock_kwargs=convblock_kwargs,
-        )
-
-        # Encoding block 3
-        self.conv3 = ResBlock(
-            128 * 2,
-            (256 * 2, 128 * 2),
-            convblock_kwargs=convblock_kwargs,
-        )
-
-        ##--------------------------------------------------------------------.
-        ### Decoding blocks
-        # Decoding block 2
-        self.up1 = Upsampling(256 * 2, 128 * 2, 64 * 2, convblock_kwargs, kernel_size_pooling)
-        # Decoding block 1
-        self.up2 = Upsampling(128 * 2, 64 * 2, 32 * 2, convblock_kwargs, kernel_size_pooling)
-        
-        # This is important for regression tasks 
-        special_kwargs = convblock_kwargs.copy()
-        special_kwargs["conv_type"] = "regular"
-        special_kwargs["batch_norm"] = False
-        special_kwargs["activation"] = last_layer_activation
-        self.uconv13 = ConvBlock(
-            32 * 2, self.output_channels, **special_kwargs
-        )
-
-        # Rezero trick for the full architecture if increment learning ... 
         if self.increment_learning:
-            self.res_increment = torch.nn.Parameter(torch.zeros(1), requires_grad=True)
+            self.res_increment = nn.Parameter(torch.zeros(1), requires_grad=True)
 
-    ##------------------------------------------------------------------------.
-    def encode(self, x, training=True):
-        """Define UNet encoder."""
-        # TODO: Adapt to 2D spatial inputs 
-        # --- TODO: Maybe create Conv2DBlock and Conv3DBlock
-        
-        # Current input shape: ['sample', 'time', 'y', 'x', 'feature']
-        # Desired shape: ['sample', 'time-feature', 'y', 'x']
-
-        batch_size = x.shape[0]
+    def forward(self, x, training=True):
+        self.batch_size = x.shape[0]
         input_y_dim = self.input_train_y_dim if training else self.input_test_y_dim
         input_x_dim = self.input_train_x_dim if training else self.input_test_x_dim
 
-        ## Extract last timestep (to add after decoding) to make the network learn the increment
-        self.x_last_timestep = x[:, -1, :, :, -1:].unsqueeze(dim=1)
         ##--------------------------------------------------------------------.
         # Reorder and reshape data
         x = reshape_input_for_encoding(x, self.dim_names, 
-                                       [batch_size, self.input_channels, input_y_dim, input_x_dim])
+                                    [self.batch_size, self.input_feature_dim, self.input_time_dim, 
+                                    input_y_dim, input_x_dim])
 
-        # Level 1
-        x_enc1 = self.conv1(x)
+        ## Extract last timestep (to add after decoding) to make the network learn the increment
+        self.x_last_timestep = x[:, -1:, -1, :, :].reshape(self.batch_size, input_y_dim, input_x_dim, 1)\
+                                                    .unsqueeze(dim=1)
+        
+        encoder_features = []
+        for i in range(len(self.pooling)):
+            x_f = x
+            for pool_layer in self.pooling[i]:
+                x_f = pool_layer(x_f)
+            for encoding_layer in self.encoders[i]:
+                x_f = encoding_layer(x_f)
+            encoder_features.append(x_f)
 
-        # Level 2
-        x_enc2_ini = self.pool1(x_enc1)
-        x_enc2 = self.conv2(x_enc2_ini)
 
-        # Level 3
-        x_enc3_ini = self.pool2(x_enc2)
-        x_enc3 = self.conv3(x_enc3_ini)
+        for i, decoder in enumerate(self.decoders):
+            for j in range(len(decoder)):
+                encoder_features[i+1] = decoder[j](encoder_features[i-j], encoder_features[i+1])
+        
+        x = torch.stack(encoder_features).sum(dim=0)
+        x = self.final_conv(x)
 
-        return x_enc3, x_enc2, x_enc1
-
-    ##------------------------------------------------------------------------.
-    def decode(self, x_enc3, x_enc2, x_enc1, training=True):  # x_enc11):
-        """Define UNet decoder."""
-        # Block 2
-        x = self.up1(x_enc3, x_enc2)
-
-        # Block 1
-        x = self.up2(x, x_enc1)
-
-        # Apply conv without batch norm and act fun
-        x = self.uconv13(x)
-
-        ##--------------------------------------------------------------------.
-        # Reshape data to ['sample', 'time', 'node', 'feature']
-        batch_size = x.shape[0]  # ['sample', 'node', 'time-feature']
         output_y_dim = self.output_train_y_dim if training else self.output_test_y_dim
         output_x_dim = self.output_train_x_dim if training else self.output_test_x_dim
-        
-        x = x.reshape(
-            batch_size,
-            self.output_time_dim,
-            output_y_dim,
-            output_x_dim,
-            self.output_feature_dim,
-        )  # ==> ['sample', 'node', 'time', 'feature']
-        x = (
-            x.rename(*["sample", "time", "y", "x", "feature"])
-            .align_to(*self.dim_names)
-            .rename(None)
-        )  # x.permute(0, 2, 1, 3)
+        x = reshape_input_for_decoding(x, self.dim_names, 
+                                       [self.batch_size, self.output_time_dim, output_y_dim, 
+                                       output_x_dim, self.output_feature_dim])
+
         if self.increment_learning:
             x *= self.res_increment 
-            # print(x.shape)
-            # print(x_last_timestep.shape)
             x += self.x_last_timestep
-        
-        return x
-
-
-class EPDNet(ConvNetModel, torch.nn.Module):
-    """Encoder-Process-Decoder Net.
-
-    This architecture is inspired from 'Kochov et al., 2021. ML accelerated computational fluid dynamics.'
-
-    Parameters
-    ----------
-    tensor_info: dict
-        Dictionary with all relevant shape, dimension and feature order informations
-        regarding input and output tensors.
-    conv_type : str, optional
-        Convolution type. Either 'graph' or 'image'.
-        The default is 'graph'.
-        conv_type='image' can be used only when sampling='equiangular'.
-    kernel_size_conv : int
-        Size ("width") of the convolutional kernel.
-        - Width of the square convolutional kernel.
-        - The number of pixels of the kernel is kernel_size_conv**2
-    bias : bool, optional
-        Whether to add bias parameters. The default is True.
-        If batch_norm = True, bias is set to False.
-    batch_norm : bool, optional
-        Wheter to use batch normalization. The default is False.
-    batch_norm_before_activation : bool, optional
-        Whether to apply the batch norm before or after the activation function.
-        The default is False.
-    activation : bool, optional
-        Whether to apply an activation function. The default is True.
-    activation_fun : str, optional
-        Name of an activation function implemented in torch.nn.functional
-        The default is 'relu'.
-    pool_method : str, optional
-        Not used
-    kernel_size_pooling : int, optional
-        Not used
-    skip_connection : str, optional
-        Possibilities: 'none','stack','sum','avg'
-        The default is 'stack.
-    increment_learning: bool, optional
-        If increment_learning = True, the network is forced internally to learn the increment
-        from the previous timestep.
-        If increment_learning = False, the network learn the full state.
-        The default is False.
-    """
-
-    def __init__(
-        self,
-        tensor_info: Dict,
-        # Convolutions options
-        kernel_size_conv: int = 3,
-        # ConvBlock Options
-        bias: bool = True,
-        batch_norm: bool = True,
-        batch_norm_before_activation: bool = True,
-        activation: bool = True,
-        activation_fun: str = "relu",
-        last_layer_activation: bool = True,
-        conv_type: str = "regular",
-        # Pooling options
-        pool_method: str = "max",
-        kernel_size_pooling: int = 4,
-        # Architecture options
-        skip_connection: str = "stack",
-        increment_learning: bool = False,
-    ):
-        ##--------------------------------------------------------------------.
-        super().__init__()
-        ##--------------------------------------------------------------------.
-        # Retrieve tensor informations
-        self.dim_names = tensor_info["dim_order"]["dynamic"]
-        self.input_feature_dim = tensor_info["input_n_feature"]
-        self.input_time_dim = tensor_info["input_n_time"]
-        self.input_train_y_dim = tensor_info["input_shape_info"]["train"]["dynamic"]["y"]
-        self.input_train_x_dim = tensor_info["input_shape_info"]["train"]["dynamic"]["x"]
-        self.input_test_y_dim = tensor_info["input_shape_info"]["test"]["dynamic"]["y"]
-        self.input_test_x_dim = tensor_info["input_shape_info"]["test"]["dynamic"]["x"]
-
-        self.output_time_dim = tensor_info["output_n_time"]
-        self.output_feature_dim = tensor_info["output_n_feature"]
-        self.output_train_y_dim = tensor_info["output_shape_info"]["train"]["dynamic"]["y"]
-        self.output_train_x_dim = tensor_info["output_shape_info"]["train"]["dynamic"]["x"]
-        self.output_test_y_dim = tensor_info["output_shape_info"]["test"]["dynamic"]["y"]
-        self.output_test_x_dim = tensor_info["output_shape_info"]["test"]["dynamic"]["x"]
-
-        ##--------------------------------------------------------------------.
-        # Define size of last dimension for ConvChen conv (merging time-feature dimension)
-        self.input_channels = self.input_feature_dim * self.input_time_dim
-        self.output_channels = self.output_feature_dim * self.output_time_dim
-
-        ##--------------------------------------------------------------------.
-        # Decide whether to predict the difference from the previous timestep
-        #  instead of the full state
-        self.increment_learning = increment_learning
-
-        ##--------------------------------------------------------------------.
-        ### Check arguments
-        skip_connection = check_skip_connection(skip_connection)
-        ##--------------------------------------------------------------------.
-        ### Define ConvBlock options
-        convblock_kwargs = {
-            "conv_type": conv_type,
-            "kernel_size": kernel_size_conv,
-            "bias": bias,
-            "batch_norm": batch_norm,
-            "batch_norm_before_activation": batch_norm_before_activation,
-            "activation": activation,
-            "activation_fun": activation_fun,
-            "padding": 1,  # TODO GENERALIZE
-            "padding_mode": "replicate",
-            "modes1": self.input_train_y_dim//2 + 1,
-            "modes2": self.input_train_x_dim //2 + 1
-        }
-
-        ##--------------------------------------------------------------------.
-        ### Define EPDnet Convolutional Layers
-        n_conv_layers = 3
-        n_conv_features = 128  # self.input_channels*16
-        resblock_shapes = [n_conv_features for i in range(n_conv_layers)]
-        # Define Encoder ConvBlocks
-        self.enc_conv1 = ConvBlock(
-            self.input_channels,
-            n_conv_features,
-            **convblock_kwargs
-        )
-        self.enc_conv2 = ConvBlock(
-            n_conv_features,
-            n_conv_features,
-            **convblock_kwargs
-        )
-        # Define "Process" ResBlocks
-        convblock_kwargs = {
-            "conv_type": "regular",
-            "kernel_size": kernel_size_conv,
-            "bias": bias,
-            "batch_norm": batch_norm,
-            "batch_norm_before_activation": batch_norm_before_activation,
-            "activation": activation,
-            "activation_fun": activation_fun,
-            "padding": 1,  # TODO GENERALIZE
-            "padding_mode": "replicate",
-            "modes1": self.input_train_y_dim//2 + 1,
-            "modes2": self.input_train_x_dim //2 + 1
-        }
-
-        self.resblock1 = ResBlock(
-            n_conv_features,
-            resblock_shapes,
-            convblock_kwargs=convblock_kwargs,
-        )
-        self.resblock2 = ResBlock(
-            n_conv_features,
-            resblock_shapes,
-            convblock_kwargs=convblock_kwargs,
-        )
-
-        self.resblock3 = ResBlock(
-            n_conv_features,
-            resblock_shapes,
-            convblock_kwargs=convblock_kwargs,
-        )
-        self.resblock4 = ResBlock(
-            n_conv_features,
-            resblock_shapes,
-            convblock_kwargs=convblock_kwargs,
-        )
-
-        # Define Decoder ConvBlocks
-        self.dec_conv1 = ConvBlock(
-            n_conv_features,
-            n_conv_features,
-            **convblock_kwargs
-        )
-
-        # Define Final ConvBlock
-        special_kwargs = convblock_kwargs.copy()
-        special_kwargs["conv_type"] = "regular"
-        special_kwargs["batch_norm"] = False
-        special_kwargs["activation"] = last_layer_activation
-        self.conv_final = ConvBlock(
-            n_conv_features,
-            self.output_channels,
-            **special_kwargs
-        )
-        ##--------------------------------------------------------------------.
-
-    ##------------------------------------------------------------------------.
-    def forward(self, x, training=True):
-        """Define EPDNet forward pass."""
-        # Current input shape: ['sample', 'time', 'y', 'x', 'feature']
-        # Desired shape: ['sample', 'node', 'time-feature']
-        ##--------------------------------------------------------------------.
-        batch_size = x.shape[0]
-        input_y_dim = self.input_train_y_dim if training else self.input_test_y_dim
-        input_x_dim = self.input_train_x_dim if training else self.input_test_x_dim
-        ##--------------------------------------------------------------------.
-        # Reorder and reshape data
-        x = (
-            x.rename(*self.dim_names)
-            .align_to("sample", "time", "y", "x", "feature")
-            .rename(None)
-        )  # x.permute(0, 2, 1, 3)
-        x = x.reshape(
-            batch_size, self.input_channels, input_y_dim, input_x_dim
-        )  # reshape to ['sample', 'channels', 'y', 'x']
-        ##--------------------------------------------------------------------.
-        # Define forward pass
-        x = self.enc_conv1(x)
-        x = self.enc_conv2(x)
-        x = self.resblock1(x)
-        x = self.resblock2(x)
-        x = self.resblock3(x)
-        x = self.resblock4(x)
-        x = self.dec_conv1(x)
-        # x = self.dec_conv2(x)
-        x = self.conv_final(x)
-
-        ##--------------------------------------------------------------------.
-        # Reshape data to ['sample', 'time', 'y', 'x', 'feature']
-        batch_size = x.shape[0] 
-        output_y_dim = self.output_train_y_dim if training else self.output_test_y_dim
-        output_x_dim = self.output_train_x_dim if training else self.output_test_x_dim
-
-        x = x.reshape(
-            batch_size,
-            self.output_time_dim,
-            output_y_dim,
-            output_x_dim,
-            self.output_feature_dim,
-        )  # ==> ['sample', 'node', 'time', 'feature']
-        x = (
-            x.rename(*["sample", "time", "y", "x", "feature"])
-            .align_to(*self.dim_names)
-            .rename(None)
-        )
 
         return x
 
@@ -517,6 +217,7 @@ class resConv(nn.Module):
                 first_layer_upsampling_stride: List[List[int]],
                 last_convblock_kernel: List[int] = [5, 4],
                 last_layer_activation: bool = False,
+                optical_flow: bool = False,
                 # Architecture options
                 increment_learning: bool = False):
         super().__init__()
@@ -545,9 +246,12 @@ class resConv(nn.Module):
         # Decide whether to predict the difference from the previous timestep
         #  instead of the full state
         self.increment_learning = increment_learning
-
+        self.optical_flow = optical_flow
         ##--------------------------------------------------------------------.
         # Layers
+        if self.optical_flow:
+            self.raft = RAFTOpticalFlow(self.input_time_dim, small_model=False)
+
         self.e_conv0 = downsampling(in_channels=self.input_channels, out_channels=n_filter)
         self.e_conv1 = downsampling(in_channels=n_filter,   out_channels=n_filter*2)
         self.e_conv2 = downsampling(in_channels=n_filter*2, out_channels=n_filter*3)
@@ -584,13 +288,18 @@ class resConv(nn.Module):
         input_y_dim = self.input_train_y_dim if training else self.input_test_y_dim
         input_x_dim = self.input_train_x_dim if training else self.input_test_x_dim
 
-        ## Extract last timestep (to add after decoding) to make the network learn the increment
-        self.x_last_timestep = x[:, -1, :, :, -1:].unsqueeze(dim=1)
         ##--------------------------------------------------------------------.
         # Reorder and reshape data
         x = reshape_input_for_encoding(x, self.dim_names, 
                                        [self.batch_size, self.input_feature_dim, self.input_time_dim, 
                                        input_y_dim, input_x_dim])
+        if self.optical_flow:
+            x = self.raft(x)
+        
+        ## Extract last timestep (to add after decoding) to make the network learn the increment
+        self.x_last_timestep = x[:, -1:, -1, :, :].reshape(self.batch_size, input_y_dim, input_x_dim, 1)\
+                                                  .unsqueeze(dim=1)
+
         e1 = self.e_conv0(x)
         e2 = self.e_conv1(e1)
         e3 = self.e_conv2(e2)

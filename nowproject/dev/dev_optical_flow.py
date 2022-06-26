@@ -461,7 +461,7 @@ for timestep in timesteps:
     repeated_flow = torch.stack(12*[predicted_flows], dim=0).reshape(12, 2, 232, 352)
 
     out = flow_warp(batch_leadtimes.to(device), repeated_flow.permute(0, 2, 3, 1),
-                    interpolation="bilinear", padding_mode="reflection")
+                    interpolation="nearest", padding_mode="reflection")
 
     out = inverse_transform_data(out, **transform_kwargs)
     out = out[:, 0, 3:-3, 3:-3].unsqueeze(dim=0).cpu().detach().numpy()
@@ -479,7 +479,7 @@ for timestep in timesteps:
         )
     )
 
-    figs_dir = Path("/home/haddad/experiments/optical_flow_figs/fixed_flow_field_all_timesteps/")
+    figs_dir = Path("/home/haddad/experiments/optical_flow_figs/fixed_flow_field_all_timesteps/nearest/")
     plot_forecast_comparison(figs_dir,
                             da.sel(forecast_reference_time=timestep_1),
                             data_dynamic,

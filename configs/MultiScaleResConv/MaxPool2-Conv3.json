@@ -2,24 +2,21 @@
     "model_settings": {
         "pretrained_model_name": null,
         "model_name_prefix": null,
-        "model_name": "RNN-AR6-resConv64-IncrementLearning",
+        "model_name": "RNN-AR6-MultiScaleResidualConv-IncrementLearning",
         "model_name_suffix": null,
-        "n_filter": 64,
-        "first_layer_upsampling_kernels": [
-            [3,4,4],
-            [3,4,4],
-            [3,4,4],
-            [4]
-        ],
-        "first_layer_upsampling_stride": [
-            [1,2,2],
-            [1,2,2],
-            [1,2,2],
-            [2]
-        ],
-        "last_convblock_kernel": [5, 4],
+        "final_sigmoid": false, 
+        "f_maps": [16, 32, 64], 
+        "layer_order": ["groupnorm", "conv", "relu"],
+        "num_groups": 8, 
+        "num_levels": 3, 
+        "pooling_depth": 3,
+        "conv_padding": 1, 
+        "pool_kernel_size": [1, 2, 2],
+        "conv_kernel_size": 3,
+        "upsample_scale_factor": [1, 2, 2],
+        "pool_type": "max",
         "increment_learning": "True",
-        "architecture_name": "resConv"
+        "architecture_name": "MultiScaleResidualConv"
     },
     "dataloader_settings": {
         "random_shuffling": true,
@@ -32,7 +29,7 @@
         "autotune_num_workers": false
     },
     "training_settings": {
-        "epochs": 15,
+        "epochs": 4,
         "ar_training_strategy": "RNN",
         "learning_rate": 0.001,
         "training_batch_size": 8,

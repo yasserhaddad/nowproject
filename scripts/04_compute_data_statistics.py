@@ -12,7 +12,7 @@ def get_unique_counts(arr: np.ndarray):
     return np.array([dict(zip(unique, counts))], dtype="object")
 
 if __name__ == '__main__':
-    client = Client(n_workers=12)
+    client = Client(n_workers=18)
     data_dir_path = Path("/ltenas3/0_Data/NowProject/")
     data_stats_dir_path = data_dir_path / "stats_5min"
     data_stats_dir_path.mkdir(exist_ok=True)
@@ -51,6 +51,8 @@ if __name__ == '__main__':
     t_end = time.time()
     print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
 
+    data_dynamic = data_dynamic.fillna(0.0)
+
     print("Computing grid cell statistics...")
     t_i = time.time()
     mean_space = data_dynamic.mean(dim="time").rename({"feature": "mean"}).compute()
@@ -73,13 +75,37 @@ if __name__ == '__main__':
 
     print("Computing yearly grid cell statistics...")
     t_i = time.time()
-    mean_space_month = data_dynamic.groupby("time.year").mean(dim="time")\
+    mean_space_year = data_dynamic.groupby("time.year").mean(dim="time")\
                                    .rename({"feature": "mean"}).compute()
-    max_space_month = data_dynamic.groupby("time.year").max(dim="time")\
+    max_space_year = data_dynamic.groupby("time.year").max(dim="time")\
                                   .rename({"feature": "max"}).compute()
-    xr.merge([mean_space_month, max_space_month]).to_netcdf(data_stats_dir_path / "stats_space_year.nc")
+    xr.merge([mean_space_year, max_space_year]).to_netcdf(data_stats_dir_path / "stats_space_year.nc")
     t_end = time.time()
     print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
+
+    print("Computing monthly statistics...")
+    t_i = time.time()
+    mean_space_month = data_dynamic.groupby("time.month").mean(dim=["time", "y", "x"])\
+                                   .rename({"feature": "mean"}).compute()
+    max_space_month = data_dynamic.groupby("time.month").max(dim=["time", "y", "x"])\
+                                  .rename({"feature": "max"}).compute()
+    xr.merge([mean_space_month, max_space_month]).to_netcdf(data_stats_dir_path / "stats_month.nc")
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
+
+    print("Computing yearly statistics...")
+    t_i = time.time()
+    mean_space_year = data_dynamic.groupby("time.year").mean(dim=["time", "y", "x"])\
+                                   .rename({"feature": "mean"}).compute()
+    max_space_year = data_dynamic.groupby("time.year").max(dim=["time", "y", "x"])\
+                                  .rename({"feature": "max"}).compute()
+    xr.merge([mean_space_year, max_space_year]).to_netcdf(data_stats_dir_path / "stats_year.nc")
+    t_end = time.time()
+    print("Elapsed time: {:.2f}h".format((t_end - t_i)/3600))
+
+
 
 
 

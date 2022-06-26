@@ -110,11 +110,13 @@ class WeightedMSELoss(nn.MSELoss):
 
 # ------------------------------------------------------------------------------.
 class LogCoshLoss(torch.nn.Module):
-    def __init__(self, masked=False, weighted_truth=False, weights_params=None):
+    def __init__(self, masked=False, weighted_truth=False, weights_params=None, zero_value=0):
         super().__init__()
         self.masked = masked
         self.weighted_truth = weighted_truth
         self.weights_params = weights_params
+        self.zero_value = zero_value    
+
     def forward(self, label, pred):
         if self.masked:
             mask = torch.logical_or(label > self.zero_value, pred > self.zero_value)

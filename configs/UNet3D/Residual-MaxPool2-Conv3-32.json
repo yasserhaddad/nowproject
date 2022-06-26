@@ -2,24 +2,21 @@
     "model_settings": {
         "pretrained_model_name": null,
         "model_name_prefix": null,
-        "model_name": "RNN-AR6-resConv64-IncrementLearning",
+        "model_name": "RNN-AR6-ResidualUNet3D-32-IncrementLearning",
         "model_name_suffix": null,
-        "n_filter": 64,
-        "first_layer_upsampling_kernels": [
-            [3,4,4],
-            [3,4,4],
-            [3,4,4],
-            [4]
-        ],
-        "first_layer_upsampling_stride": [
-            [1,2,2],
-            [1,2,2],
-            [1,2,2],
-            [2]
-        ],
-        "last_convblock_kernel": [5, 4],
+        "final_sigmoid": false, 
+        "f_maps": 32, 
+        "layer_order": ["conv", "groupnorm", "elu"],
+        "num_groups": 8, 
+        "num_levels": 5, 
+        "is_segmentation": false, 
+        "conv_padding": 1, 
+        "pool_kernel_size": [1, 2, 2],
+        "conv_kernel_size": 3,
+        "upsample_scale_factor": [1, 2, 2],
+        "pool_type": "max",
         "increment_learning": "True",
-        "architecture_name": "resConv"
+        "architecture_name": "ResidualUNet3D"
     },
     "dataloader_settings": {
         "random_shuffling": true,
