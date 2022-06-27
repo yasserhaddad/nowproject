@@ -84,8 +84,8 @@ SKILL_CBAR_EXTEND_DICT = {
 }
 
 SKILL_YLIM_DICT = {
-    "BIAS": (-4, 4),
-    "RMSE": (0, 4),
+    "BIAS": (-1, 1),
+    "RMSE": (0, 3),
     "rSD": (0.6, 1.4),
     "pearson_R2": (0, 1),
     "KGE": (-1.05, 1.05),
@@ -231,6 +231,7 @@ def plot_comparison_averaged_skills(
     variables=["precip"],
     legend_labels=None,
     n_leadtimes=None,
+    title=None,
     figsize=(17, 19)
 ):
     if not n_leadtimes:
@@ -243,6 +244,9 @@ def plot_comparison_averaged_skills(
     leadtimes = [str(l).split(" ")[0] for l in leadtimes.astype("timedelta64[m]")]
     # Create figure
     fig, axs = plt.subplots(len(skills), len(variables), figsize=figsize)
+
+    if title:
+        plt.suptitle(title, y=1.03)
     # Initialize axes
     ax_i = 0
     axs = axs.flatten()
@@ -280,8 +284,8 @@ def plot_comparison_averaged_skills(
             axs[ax_i].set_xticklabels(leadtimes[::2])
             ##------------------------------------------------------------------.
             # Add title
-            if ax_i < len(variables):
-                axs[ax_i].set_title(var.upper())
+            # if ax_i < len(variables):
+            #     axs[ax_i].set_title(var.upper())
             ##------------------------------------------------------------------.
             # Update ax count
             ax_i += 1
