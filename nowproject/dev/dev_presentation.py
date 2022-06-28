@@ -78,13 +78,14 @@ colors = np.vstack((colors_undersea, colors_land))
 cut_terrain_map = matplotlib.colors.LinearSegmentedColormap.from_list('cut_terrain', colors)
 
 dem_dir_path = Path("/ltenas3/0_GIS/DEM Switzerland/")
-dem = load_static_topo_data(dem_dir_path / "srtm_Switzerland_EPSG21781.tif", data_dynamic_ch)
+dem = load_static_topo_data(dem_dir_path / "srtm_Switzerland_EPSG21781.tif", data_dynamic_ch,
+                            upsample=False)
 dem = dem.assign_coords({"x": dem.x.data*1000})
 dem = dem.assign_coords({"y": dem.y.data*1000})
 
 norm = FixPointNormalize(sealevel=0,
-                         vmax=np.max(dem.feature.data)-400,
-                         vmin=np.min(dem.feature.data)+250)
+                         vmax=np.max(dem.feature.data),
+                         vmin=np.min(dem.feature.data)+200)
 crs_ref = proj4_to_cartopy(METADATA_CH["projection"])
 crs_proj = crs_ref
 _, ax = plt.subplots(
