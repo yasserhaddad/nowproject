@@ -131,7 +131,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # Split data into train, test and validation set
     ## - Defining time split for training
     training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
-    validation_years = np.array(["2021-01-01T00:00", "2021-03-31T23:57:30"], dtype="M8[s]")
+    validation_years = np.array(["2020-01-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
     # training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
     # validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
     # training_years = np.array(["2018-01-01T00:00", "2018-01-31T23:57:30"], dtype="M8[s]")
@@ -238,10 +238,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # - Define custom loss function
     
-    criterion = WeightedMSELoss(reduction="mean_masked")
+    # criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
-    # criterion = WeightedMSELoss(reduction="mean_masked",
-    #                             weighted_truth=True, weights_params=(5, 4))
+    criterion = WeightedMSELoss(reduction="mean_masked",
+                                weighted_truth=True, weights_params=(5, 4))
     # criterion = LogCoshLoss(masked=True, weighted_truth=True, weights_params=(5, 4))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
@@ -286,7 +286,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     patience = int(
         3000 / training_settings["scoring_interval"]
     )  # with 1000 and lr 0.005 crashed without AR update !
-    minimum_iterations = 10000 
+    minimum_iterations = 20000 
     minimum_improvement = 0.0001
     stopping_metric = "validation_total_loss"  # training_total_loss
     mode = "min"  # MSE best when low
@@ -522,6 +522,7 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-32.json"
+    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
 
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
