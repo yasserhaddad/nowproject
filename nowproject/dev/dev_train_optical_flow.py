@@ -92,7 +92,7 @@ from nowproject.data.data_utils import (
     get_tensor_info_with_patches
 )
 
-from nowproject.layers import RAFTOpticalFlow
+from nowproject.dl_models.layers_res_conv import RAFTOpticalFlow
 
 import torch
 from torchvision.utils import flow_to_image

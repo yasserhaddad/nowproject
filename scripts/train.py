@@ -517,7 +517,7 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
-    # default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
+    default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_optical_flow.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"

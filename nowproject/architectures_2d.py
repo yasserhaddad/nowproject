@@ -12,22 +12,61 @@ from torch.nn import (
 )
 import torch.nn.functional as F
 
-from nowproject.layers import (
+from nowproject.dl_models.layers_2d import (
     ConvBlock,
-    RAFTOpticalFlow,
-    ResBlock, 
-    Upsampling,
-    UpsamplingResConv,
-    downsampling,
-    upsamplingLast,
-    RAFTOpticalFlow
+    ResBlock,
+    Upsampling
 )
-from nowproject.models import UNetModel, ConvNetModel
+
 from nowproject.utils.utils_models import (
     check_skip_connection,
     reshape_input_for_decoding,
     reshape_input_for_encoding
 )
+
+from abc import ABC, abstractmethod
+
+
+##----------------------------------------------------------------------------.
+class NowProject(ABC):
+    """Define general NowProject model class."""
+
+    @abstractmethod
+    def forward(self, x):
+        """Implement a forward pass."""
+        pass
+
+
+##----------------------------------------------------------------------------.
+class UNetModel(NowProject):
+    """Define general UNet class."""
+
+    @abstractmethod
+    def encode(self, *args, **kwargs):
+        """Encode an input into a lower dimensional space."""
+        pass
+
+    @abstractmethod
+    def decode(self, *args, **kwargs):
+        """Decode low dimensional data into a high dimensional space."""
+        pass
+
+    def forward(self, x, training=True):
+        """Implement a forward pass."""
+        x_encoded = self.encode(x, training=training)
+        output = self.decode(*x_encoded, training=training)
+        return output
+
+
+##----------------------------------------------------------------------------.
+class ConvNetModel(NowProject):
+    """Define general ResNet class."""
+
+    @abstractmethod
+    def forward(self, x):
+        """Implement a forward pass."""
+        pass
+##----------------------------------------------------------------------------.
 
 class UNet(UNetModel, torch.nn.Module):
     """UNet with residual layers.

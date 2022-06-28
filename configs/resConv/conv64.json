@@ -32,7 +32,7 @@
         "autotune_num_workers": false
     },
     "training_settings": {
-        "epochs": 10,
+        "epochs": 15,
         "ar_training_strategy": "RNN",
         "learning_rate": 0.001,
         "training_batch_size": 8,
