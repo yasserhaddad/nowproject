@@ -107,14 +107,14 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries, 
-                                        timestep=10)
+                                        timestep=5)
     # data_static = load_static_topo_data(static_data_path, data_dynamic)
     data_static = None
 
     patch_size = 128
     data_patches = prepare_data_patches(data_dir_path / "rzc_cropped_patches_fixed.parquet",
                                         patch_size=patch_size,
-                                        timestep=10)
+                                        timestep=5)
     data_bc = None
 
     ##------------------------------------------------------------------------.
@@ -224,7 +224,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"10mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
+        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -394,7 +394,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         output_k=ar_settings["output_k"],
         forecast_cycle=ar_settings["forecast_cycle"],
         stack_most_recent_prediction=ar_settings["stack_most_recent_prediction"],
-        ar_iterations=5,  # How many time to autoregressive iterate
+        ar_iterations=11,  # How many time to autoregressive iterate
         # Save options
         zarr_fpath=forecast_zarr_fpath.as_posix(),  # None --> do not write to disk
         rounding=2,  # Default None. Accept also a dictionary
