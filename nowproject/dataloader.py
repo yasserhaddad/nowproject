@@ -626,9 +626,8 @@ class AutoregressivePatchLearningDataset(Dataset):
 
         ## -------------------------------------------------------------------.
         if self.data_availability["patches"]:
-            idx_patch = idx + len(self.input_k) if self.subset_timesteps is not None \
-                        else xr_idx_k_0
-            patches = list(set(convert_str_patch_idx_to_int(self.data_patches.values[idx_patch])))
+            idx_patch = self.data_dynamic.isel(time=xr_idx_k_0).time.values
+            patches = list(set(convert_str_patch_idx_to_int(self.data_patches.sel(time=idx_patch).values.item())))
             patch_size = self.data_patches.attrs["patch_size"]
             if len(patches) > 0:
                 (y0, x0) = patches[np.random.choice(range(len(patches)))]
