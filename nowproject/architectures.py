@@ -23,7 +23,6 @@ from nowproject.dl_models.layers_optical_flow import (
     RAFTOpticalFlow
 )
 
-from nowproject.models import UNetModel, ConvNetModel
 from nowproject.utils.utils_models import (
     check_skip_connection,
     reshape_input_for_decoding,
