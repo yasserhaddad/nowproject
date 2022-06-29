@@ -238,10 +238,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # - Define custom loss function
     
-    # criterion = WeightedMSELoss(reduction="mean_masked")
+    criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
-    criterion = WeightedMSELoss(reduction="mean_masked",
-                                weighted_truth=True, weights_params=(5, 4))
+    # criterion = WeightedMSELoss(reduction="mean_masked",
+    #                             weighted_truth=True, weights_params=(5, 4))
     # criterion = LogCoshLoss(masked=True, weighted_truth=True, weights_params=(5, 4))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
@@ -517,12 +517,13 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
-    default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
+    # default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_optical_flow.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-32.json"
-    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
+    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
+    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-GN-ELU.json"
 
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
