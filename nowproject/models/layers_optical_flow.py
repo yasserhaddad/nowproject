@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torchvision.models.optical_flow import raft_large, raft_small
-from nowproject.utils.utils_models import (
+from nowproject.models.models_utils import (
     transform_data_for_raft,
     inverse_transform_data_for_raft,
     flow_warp,
@@ -11,7 +11,19 @@ from nowproject.utils.utils_models import (
 
 
 class RAFTOpticalFlow(nn.Module):
-    def __init__(self, input_time, small_model=False, finetune=False) -> None:
+    """Deep optical flow module based on RAFT : https://arxiv.org/abs/2003.12039"""
+    def __init__(self, input_time: int, small_model: bool = False, finetune: bool = False) -> None:
+        """Initializes the deep optical flow module based on RAFT.
+
+        Parameters
+        ----------
+        input_time : int
+            Number of input timesteps
+        small_model : bool, optional
+            Whether to use the small RAFT model or the large one, by default False
+        finetune : bool, optional
+            Whether to finetune the model or use it in evaluation mode, by default False
+        """
         super().__init__()
 
         self.raft = raft_small if small_model else raft_large

@@ -1,7 +1,29 @@
+import pathlib
+from typing import Tuple
 import xarray as xr
 from xverif import xverif
 
-def verification_routine(ds_forecast, ds_obs, skills_dir, print_metrics=True):
+def verification_routine(ds_forecast: xr.Dataset, ds_obs: xr.Dataset, 
+                         skills_dir: pathlib.Path, print_metrics: bool = True) -> Tuple[xr.Dataset, ...]:
+    """Performs the verification routine by computing continuous, categorical and
+    spatial metrics. The last two sets of metrics are computed at different thresholds.
+
+    Parameters
+    ----------
+    ds_forecast : xr.Dataset
+        Dataset containing the predicted values
+    ds_obs : xr.Dataset
+        Dataset containing the observed values
+    skills_dir : pathlib.Path
+        Path to the folder in which to save the metrics
+    print_metrics : bool, optional
+        Whether to print the metrics after being computed, by default True
+
+    Returns
+    -------
+    Tuple[xr.Dataset, ...]
+        The different metrics computed during the routine, both spatial and averaged results.
+    """
     ds_det_cont_skill = xverif.deterministic(
             pred=ds_forecast.chunk({"time": -1}),
             obs=ds_obs.sel(time=ds_forecast.time).chunk({"time": -1}),

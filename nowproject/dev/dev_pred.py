@@ -21,7 +21,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
@@ -53,7 +53,7 @@ from nowproject.utils.plot import (
     plot_skills_distribution
 )
 from nowproject.utils.scalers import RainScaler, RainBinScaler
-from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
+from nowproject.data.dataset.data_config import METADATA, BOTTOM_LEFT_COORDINATES
 from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, get_tensor_info_with_patches
 
 # %load_ext autoreload

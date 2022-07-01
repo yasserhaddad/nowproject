@@ -1,5 +1,5 @@
-from multiprocessing.sharedctypes import Value
 import pathlib
+from typing import Callable, List, Tuple, Union
 import xarray as xr
 
 import time
@@ -12,6 +12,8 @@ import numpy as np
 from functools import partial
 from tabulate import tabulate
 from torch.utils.data import Dataset, DataLoader
+
+from nowproject.scalers import Scaler
 
 from xforecasting.utils.ar import (
     get_dict_stack_info,
@@ -61,7 +63,19 @@ from xforecasting.dataloader_autoregressive import (
     worker_init_fn
 )
 
-def convert_str_patch_idx_to_int(patches_idx):
+def convert_str_patch_idx_to_int(patches_idx: str) -> List[Tuple[int, int]]:
+    """Converts the string of patches indices to a list.
+
+    Parameters
+    ----------
+    patches_idx : str
+        String of patches indices
+
+    Returns
+    -------
+    list(tuple(int, int))
+        List of patches indices
+    """
     if patches_idx == "":
         return []
     return [(int(idx[0]), int(idx[1])) for idx in [i.split("-")for i in patches_idx.split(", ")]] 
@@ -76,26 +90,26 @@ class AutoregressivePatchLearningDataset(Dataset):
     ## -----------------------------------------------------------------------.
     def __init__(
         self,
-        data_dynamic,
+        data_dynamic: Union[xr.DataArray, xr.Dataset],
         # Autoregressive settings
-        input_k,
-        output_k,
-        forecast_cycle,
-        ar_iterations,
-        stack_most_recent_prediction,
+        input_k: List[int],
+        output_k: List[int],
+        forecast_cycle: int,
+        ar_iterations: int,
+        stack_most_recent_prediction: bool,
         # Facultative input data
-        data_patches=None,
-        data_bc=None,
-        data_static=None,
-        bc_generator=None,
-        scaler=None,
+        data_patches: Union[xr.DataArray, xr.Dataset] = None,
+        data_bc: Union[xr.DataArray, xr.Dataset] = None,
+        data_static: Union[xr.DataArray, xr.Dataset] = None,
+        bc_generator: Callable = None,
+        scaler: Scaler = None,
         # Custom function to get batches across AR iterations
-        ar_batch_fun=get_aligned_ar_batch,
+        ar_batch_fun: Callable = get_aligned_ar_batch,
         # Setting for optional time subsets
-        subset_timesteps=None,
-        training_mode=True,
+        subset_timesteps: np.ndarray = None,
+        training_mode: bool = True,
         # GPU settings
-        device="cpu",
+        device: Union[str, torch.device] = "cpu",
     ):
         """
         "Create the Dataset required to generate an AutoregressiveDataloader.
@@ -104,6 +118,8 @@ class AutoregressivePatchLearningDataset(Dataset):
         ----------
         data_dynamic : DataArray
             DataArray with dynamic data.
+        data_patches : DataArray
+            DataArray with indices of patches extracted from the dynamic data.
         data_bc : DataArray, optional
             DataArray with boundary conditions features.
             The default is None.
@@ -115,7 +131,7 @@ class AutoregressivePatchLearningDataset(Dataset):
             data_bc, and data_static to generate boundary conditions on the fly.
             Format: def bc_generator(data_dynamic, data_bc=None, data_static=None):
         scaler : xscaler
-            xscaler object to transform the DataArrays.
+            Scaler object to transform the DataArrays.
             The default is None.
         ar_batch_fun : callable
             Custom function that batch/stack together data across AR iterations.
@@ -127,7 +143,7 @@ class AutoregressivePatchLearningDataset(Dataset):
             The default ar_batch_fun function is the pre-implemented get_aligned_ar_batch() which return
             two torch.Tensor: one for X (input) and one four Y (output). Such function expects
             the dynamic and bc batch data to be aligned (have same dimensions and shape)
-        subset_timesteps : np.array with datetime
+        subset_timesteps : np.ndarray with datetime
             Allows to restrict the timesteps that the DataLoader will load.
         training_mode : bool
             When training_mode = True (default), the dataloader loads also the ground truth Y.
@@ -235,20 +251,6 @@ class AutoregressivePatchLearningDataset(Dataset):
                 "'data_dynamic' does not have a uniform 'time' resolution."
             )
         self.t_res_timedelta = np.diff(data_dynamic["time"].values)[0]
-
-        # Check that patches and dynamic data have same temporal resolution
-        # if data_availability["patches"]:
-        #     if not xr_has_uniform_resolution(data_patches, dim="time"):
-        #         raise ValueError(
-        #             "'data_patches' does not have a uniform 'time' resolution."
-        #         )
-
-        #     if not xr_have_same_timesteps(data_dynamic, data_patches, time_dim="time"):
-        #         print(
-        #             "'data_dynamic' and 'data_patches' do not have the same timesteps."
-        #             "Data are going to be re-aligned along the 'time' dimension."
-        #         )
-        #         data_dynamic, data_patches = xr_align_dim(data_dynamic, data_patches, dim="time")
 
         if data_availability["bc"]:
             if not xr_has_uniform_resolution(data_bc, dim="time"):
@@ -562,7 +564,7 @@ class AutoregressivePatchLearningDataset(Dataset):
 
         ##--------------------------------------------------------------------.
 
-    def update_ar_iterations(self, new_ar_iterations):
+    def update_ar_iterations(self, new_ar_iterations: int):
         """Update Dataset informations.
 
         If the number of forecast iterations changes, the function update
@@ -581,7 +583,7 @@ class AutoregressivePatchLearningDataset(Dataset):
         return self.n_samples
 
     ##------------------------------------------------------------------------.
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
         """Return sample and label corresponding to an index as torch.Tensor objects."""
         # Assumptions:
         # - The code currently assume that data_dynamic and data_bc are aligned over time
@@ -786,19 +788,16 @@ class AutoregressivePatchLearningDataset(Dataset):
 
 ##----------------------------------------------------------------------------.
 def autoregressive_patch_collate_fn(
-    list_samples,
-    torch_static=None,
-    pin_memory=False,
-    prefetch_in_gpu=False,
-    asyncronous_gpu_transfer=True,
-    device="cpu",
-):
+    list_samples: List[dict],
+    torch_static: torch.Tensor = None,
+    pin_memory: bool = False,
+    prefetch_in_gpu: bool = False,
+    asyncronous_gpu_transfer: bool = True,
+    device: Union[str, torch.device] = "cpu",
+) -> dict:
     """Stack the list of samples into batch of data."""
-    # TODO: why this throw error if attached to AR_Dataset as a method
     # list_samples is a list of what returned by __get_item__ of AutoregressiveDataset
     # To debug: list_samples = [dataset.__getitem__(0), dataset.__getitem__(1)]
-
-
 
     ##------------------------------------------------------------------------.
     # Retrieve other infos
@@ -959,19 +958,19 @@ def autoregressive_patch_collate_fn(
 
 
 def AutoregressivePatchLearningDataLoader(
-    dataset,
-    batch_size=64,
-    drop_last_batch=True,
-    shuffle=True,
-    shuffle_seed=69,
-    num_workers=0,
-    pin_memory=False,
-    prefetch_in_gpu=False,
-    prefetch_factor=2,
-    asyncronous_gpu_transfer=True,
-    device="cpu",
-    verbose=False,
-):
+    dataset: Dataset,
+    batch_size: int = 64,
+    drop_last_batch: bool = True,
+    shuffle: bool = True,
+    shuffle_seed: int = 69,
+    num_workers: int = 0,
+    pin_memory: bool = False,
+    prefetch_in_gpu: bool = False,
+    prefetch_factor: int = 2,
+    asyncronous_gpu_transfer: bool = True,
+    device: Union[str, torch.device] = "cpu",
+    verbose: bool = False,
+) -> DataLoader:
     """
     Create the DataLoader required for autoregressive model training.
 

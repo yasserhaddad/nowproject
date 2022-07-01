@@ -16,7 +16,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
