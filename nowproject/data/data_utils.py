@@ -88,7 +88,7 @@ def prepare_data_patches(data_patches_path: pathlib.Path, patch_size: int, times
 
 
 def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset, 
-                          upsample: bool = True, upsample_factor: int = 13, 
+                          upsample: bool = True, upsample_factor: int = 13, rescale: bool = True,
                           tpi: bool = False, scale_tpi: int = None) -> xr.Dataset:
     """Loads topographic data and resamples it to match the dynamic data loaded for training.
 
@@ -128,6 +128,9 @@ def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset
     dem["x"] = dem["x"] / 1000
     dem["y"] = dem["y"] / 1000
     dem = dem.interp(coords={"x": data_dynamic.x.values, "y": data_dynamic.y.values})
+
+    if rescale:
+        dem = (dem - dem.min()) / (dem.max() - dem.min())
 
     return dem.to_dataset(name="feature")
 
