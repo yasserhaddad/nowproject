@@ -106,8 +106,8 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries, 
                                         timestep=5)
-    # data_static = load_static_topo_data(static_data_path, data_dynamic)
-    data_static = None
+    data_static = load_static_topo_data(static_data_path, data_dynamic)
+    # data_static = None
 
     patch_size = 128
     data_patches = prepare_data_patches(data_dir_path / "rzc_cropped_patches_fixed.parquet",
@@ -222,7 +222,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-{training_settings['epochs']}epochs-1year", 
+        suffix=f"5mins-DEM-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -520,8 +520,8 @@ if __name__ == "__main__":
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-32.json"
-    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
-    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-GN-ELU.json"
+    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
+    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-GN-ELU.json"
 
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
