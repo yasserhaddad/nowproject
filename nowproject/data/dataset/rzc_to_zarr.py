@@ -15,7 +15,7 @@ from multiprocessing import Pool, cpu_count
 
 import zarr
 from xforecasting.utils.zarr import rechunk_Dataset, write_zarr
-from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
+from nowproject.data.dataset.data_config import BOTTOM_LEFT_COORDINATES, NETCDF_ENCODINGS, ZARR_ENCODING, METADATA
 
 import warnings
 from warnings import warn
@@ -24,6 +24,15 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def unzip_files(input_path: pathlib.Path, output_path: pathlib.Path):
+    """Unzip .zip files in input_path and save them in output_path.
+
+    Parameters
+    ----------
+    input_path : pathlib.Path
+        Path to input folder
+    output_path : pathlib.Path
+        Path to folder where unzipped files will be saved
+    """
     for p in sorted(input_path.glob("*.zip")):
         with ZipFile(p, 'r') as zip_ref:
             zip_name = p.as_posix().split("/")[-1][:-4]
@@ -33,6 +42,15 @@ def unzip_files(input_path: pathlib.Path, output_path: pathlib.Path):
 
 
 def unzip_rzc(input_dir_path: pathlib.Path, output_dir_path: pathlib.Path):
+    """Unzip all .zip files of all the different years.
+
+    Parameters
+    ----------
+    input_dir_path : pathlib.Path
+        Path to input folder
+    output_dir_path : pathlib.Path
+        Path to folder where unzipped files will be saved
+    """
     folders = input_dir_path.glob("*")
     for folder in sorted(folders):
         year = int(folder.as_posix().split("/")[-1])
@@ -44,7 +62,19 @@ def unzip_rzc(input_dir_path: pathlib.Path, output_dir_path: pathlib.Path):
             print("done.")    
 
 
-def rzc_filename_to_time(filename: str):
+def rzc_filename_to_time(filename: str) -> datetime.datetime:
+    """Determines the time corresponding to the RZC filename.
+
+    Parameters
+    ----------
+    filename : str
+        Name of the RZC file.
+
+    Returns
+    -------
+    datetime.datetime
+        Time corresponding to the RZC filename
+    """
     time = datetime.datetime.strptime(filename[3:12], "%y%j%H%M")
     if filename[3:12].endswith("2") or filename[3:12].endswith("7"):
         time = time + datetime.timedelta(seconds=30)
@@ -52,7 +82,19 @@ def rzc_filename_to_time(filename: str):
     return time
 
 
-def get_metranet_header_dictionary(radar_file: str):
+def get_metranet_header_dictionary(radar_file: str) -> dict:
+    """Extracts the header of the RZC file.
+
+    Parameters
+    ----------
+    radar_file : str
+        Path to the RZC file.
+
+    Returns
+    -------
+    dict
+        Header of the RZC file containing the different metadata
+    """
     prd_header = {'row': 0, 'column': 0}
     try:
        with open(radar_file, 'rb') as data_file:
@@ -71,6 +113,20 @@ def get_metranet_header_dictionary(radar_file: str):
 
 
 def read_rzc_file(input_path: pathlib.Path) -> xr.Dataset:
+    """Reads the RZC file and returns an xarray Dataset containing
+    the precipitation estimates with the metadata of the file.
+
+    Parameters
+    ----------
+    input_path : pathlib.Path
+        Path to input RZC file
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset containing the precipitation estimates along with
+        the metadata of the file
+    """
     metranet = pyart.aux_io.read_cartesian_metranet(input_path.as_posix(), reader="python")
     rzc = metranet.fields['radar_estimated_rain_rate']['data'][0,:,:]
 
@@ -109,9 +165,21 @@ def read_rzc_file(input_path: pathlib.Path) -> xr.Dataset:
 
 
 def daily_rzc_data_to_netcdf(input_dir_path: pathlib.Path, output_dir_path: pathlib.Path,
-                             log_dir_path: pathlib.Path, encoding: dict = NETCDF_ENCODINGS, 
-                             row_start: int = 0, row_end: int = 640, col_start: int = 0, 
-                             col_end: int = 710):
+                             log_dir_path: pathlib.Path, encoding: dict = NETCDF_ENCODINGS):
+    """Read all the RZC files of a certain day, combine them into one xarray Dataset and save
+    the result in a netCDF file.
+
+    Parameters
+    ----------
+    input_dir_path : pathlib.Path
+        Path to the input folder
+    output_dir_path : pathlib.Path
+        Path to the output folder
+    log_dir_path : pathlib.Path
+        Path to save the logs of the reading process
+    encoding : dict, optional
+        Encoding of the netCDF file, by default NETCDF_ENCODINGS
+    """
     filename = input_dir_path.as_posix().split("/")[-1]
     output_filename = filename + ".nc"
     list_ds = []
@@ -119,7 +187,7 @@ def daily_rzc_data_to_netcdf(input_dir_path: pathlib.Path, output_dir_path: path
     if not (output_dir_path / output_filename).exists():
         for file in sorted(input_dir_path.glob("*.801")):
             try:
-                list_ds.append(read_rzc_file(file, row_start, row_end, col_start, col_end))
+                list_ds.append(read_rzc_file(file))
             except TypeError:
                 with open(log_dir_path / f"type_errors_{filename}.txt", "a+") as f:
                     f.write(f"{file.as_posix()}\n")
@@ -135,6 +203,20 @@ def daily_rzc_data_to_netcdf(input_dir_path: pathlib.Path, output_dir_path: path
 
 def rzc_to_netcdf(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, 
                   log_dir_path: pathlib.Path, num_workers: int = 6):
+    """Process all the RZC files and combine them into daily netCDF files.
+
+    Parameters
+    ----------
+    data_dir_path : pathlib.Path
+        Path to the input data folder
+    output_dir_path : pathlib.Path
+        Path to the output data folder
+    log_dir_path : pathlib.Path
+        Path to the folder where to save the logs of the
+        reading process
+    num_workers : int, optional
+        Number of workers to parallelize the reading of RZC files, by default 6
+    """
     for folder_year in sorted(data_dir_path.glob("*")):
         year = int(folder_year.as_posix().split("/")[-1])
         print(year)
@@ -147,7 +229,21 @@ def rzc_to_netcdf(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path,
                       zip(list_folders_days, repeat(output_dir_year_path), repeat(log_dir_path)))
 
 
-def fill_missing_time(ds: xr.Dataset, range_freq: str = "2min30s"):
+def fill_missing_time(ds: xr.Dataset, range_freq: str = "2min30s") -> xr.Dataset:
+    """Fill missing timesteps with default values in a xarray Dataset.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Input xarray Dataset
+    range_freq : str, optional
+        Interval between each timestep, by default "2min30s"
+
+    Returns
+    -------
+    xr.Dataset
+        Dataset with a contiguous time range and no missing timesteps
+    """
     start = ds.time.to_numpy()[0]
     end = ds.time.to_numpy()[-1]
 
@@ -159,6 +255,19 @@ def fill_missing_time(ds: xr.Dataset, range_freq: str = "2min30s"):
     
 
 def drop_duplicates_timesteps(ds: xr.Dataset):
+    """Drop duplicate timesteps in the input Dataset by only keeping the
+    data measurements taken with the highest number of available radars.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Input xarray Dataset
+
+    Returns
+    -------
+    xr.Dataset
+        Processed dataset with no duplicate timesteps
+    """
     idx_keep = np.arange(len(ds.time))
     to_remove = []
     _, idx, count = np.unique(ds.time, return_counts=True, return_index=True)
@@ -175,6 +284,19 @@ def drop_duplicates_timesteps(ds: xr.Dataset):
 
 def postprocess_netcdf_file(input_file_path: pathlib.Path, output_dir_year_path: pathlib.Path, 
                             encoding: dict = NETCDF_ENCODINGS):
+    """Postprocess a daily netCDF file of precipitation estimates, by dropping duplicate timesteps, 
+    filling missing timesteps and converting some coordinates to the right type, and then save the
+    postprocessed dataset. 
+
+    Parameters
+    ----------
+    input_file_path : pathlib.Path
+        Input netCDF file path
+    output_dir_year_path : pathlib.Path
+        Output folder where to save the postprocessed dataset
+    encoding : dict, optional
+        Encoding of the netCDF file, by default NETCDF_ENCODINGS
+    """
     ds = fill_missing_time(drop_duplicates_timesteps(xr.open_dataset(input_file_path).sortby("time")))
     ds['radar_quality'] = ds['radar_quality'].astype(str)
     ds['radar_availability'] = ds['radar_availability'].astype(str)
@@ -185,6 +307,19 @@ def postprocess_netcdf_file(input_file_path: pathlib.Path, output_dir_year_path:
 
 
 def postprocess_all_netcdf(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, num_workers: int = 6):
+    """Postprocess all the daily netCDF files of precipitation estimates, by dropping duplicate timesteps, 
+    filling missing timesteps and converting some coordinates to the right type, and then save the
+    postprocessed dataset.
+
+    Parameters
+    ----------
+    data_dir_path : pathlib.Path
+        Input folder where the netCDF files are stored
+    output_dir_path : pathlib.Path
+        Output folder where to save the postprocessed datasets
+    num_workers : int, optional
+        Number of workers to parallelize the postprocessing of RZC files, by default 6
+    """
     for year_dir_path in data_dir_path.glob("*"):
         year = int(year_dir_path.as_posix().split("/")[-1])
         print(year)
@@ -198,7 +333,19 @@ def postprocess_all_netcdf(data_dir_path: pathlib.Path, output_dir_path: pathlib
 
 def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Path, 
                        compressor: Any = "auto", encoding: dict = ZARR_ENCODING):
+    """Combine all the daily netCDF file into one dataset and save it in Zarr format.
 
+    Parameters
+    ----------
+    data_dir_path : pathlib.Path
+        Input folder where the netCDF files are stored
+    output_dir_path : pathlib.Path
+        Output folder where to save the dataset in Zarr format
+    compressor : Any, optional
+        Compressor to pass to the Zarr encoder, by default "auto"
+    encoding : dict, optional
+        Encoding of the Zarr output, by default ZARR_ENCODING
+    """
     temporal_chunk_filepath = output_dir_path / "rzc_temporal_chunk.zarr"
     if temporal_chunk_filepath.exists():
         shutil.rmtree(temporal_chunk_filepath)
@@ -241,14 +388,14 @@ def netcdf_rzc_to_zarr(data_dir_path: pathlib.Path, output_dir_path: pathlib.Pat
 
 if __name__ == "__main__":
     zip_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zipped")
-    unzipped_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/unzipped")
+    unzipped_dir_path = pathlib.Path("/ltenas3/0_Data/NowProject/unzipped")
     netcdf_dir_path = pathlib.Path("/ltenas3/monika/data_lte/rzc/")
     postprocessed_netcdf_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/netcdf/")
     zarr_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/zarr/")
     log_dir_path = pathlib.Path("/ltenas3/0_MCH/RZC/logs/")
 
     workers = cpu_count() - 4
-    # unzip_rzc(zip_dir_path, unzipped_dir_path)
+    unzip_rzc(zip_dir_path, unzipped_dir_path)
     # rzc_to_netcdf(unzipped_dir_path, netcdf_dir_path, log_dir_path, num_workers=workers) 
     # postprocess_all_netcdf(netcdf_dir_path, postprocessed_netcdf_dir_path, num_workers=workers)
-    netcdf_rzc_to_zarr(postprocessed_netcdf_dir_path, zarr_dir_path, compressor=zarr.Blosc(cname="zstd", clevel=3, shuffle=2))
+    # netcdf_rzc_to_zarr(postprocessed_netcdf_dir_path, zarr_dir_path, compressor=zarr.Blosc(cname="zstd", clevel=3, shuffle=2))

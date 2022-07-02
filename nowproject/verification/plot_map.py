@@ -9,7 +9,7 @@ import matplotlib.colors
 
 from PIL import Image
 from typing import List, Tuple, Union
-from nowproject.utils.plot_precip import plot_single_precip
+from nowproject.verification.plot_precip import plot_single_precip
 from pysteps.visualization.utils import proj4_to_cartopy
 from pysteps.visualization.precipfields import get_colormap
 from matplotlib import colors
@@ -48,14 +48,36 @@ class FixPointNormalize(matplotlib.colors.Normalize):
 def rescale_spatial_axes(ds: Union[xr.Dataset, xr.DataArray],
                          spatial_dims: List[str] = ["y", "x"],
                          scale_factor: int = 1000) -> Union[xr.Dataset, xr.DataArray]:
-    
+    """Rescales the spatial axes of an xarray Dataset or DataArray.
+
+    Parameters
+    ----------
+    ds : Union[xr.Dataset, xr.DataArray]
+        Input Dataset or DataArray
+    spatial_dims : List[str], optional
+        Dimensions to rescale, by default ["y", "x"]
+    scale_factor : int, optional
+        Rescaling factor, by default 1000
+
+    Returns
+    -------
+    Union[xr.Dataset, xr.DataArray]
+        Rescaled Dataset or DataArray
+    """
     ds = ds.assign_coords({spatial_dims[0]: ds[spatial_dims[0]].data*scale_factor})
     ds = ds.assign_coords({spatial_dims[1]: ds[spatial_dims[1]].data*scale_factor})
 
     return ds
 
 
-def get_colormap_error():
+def get_colormap_error() -> Tuple[colors.Colormap, colors.BoundaryNorm, List[float], List[str]]:
+    """Generates a colormap for error bars for precipitation nowcasting.
+
+    Returns
+    -------
+    Tuple[colors.Colormap, colors.BoundaryNorm, List[float], List[str]]
+        Generated colormap, boundary norm, ticks and their string version
+    """
     clevs = [-60, - 30, -16, -8, -4, -2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 4, 8, 16, 30, 60]
     clevs_str = [str(clev) for clev in clevs]
     norm = colors.BoundaryNorm(boundaries=clevs, ncolors=len(clevs)+1)
@@ -66,7 +88,16 @@ def get_colormap_error():
 
 def plot_patches(figs_dir: pathlib.Path,
                  da_obs: xr.DataArray):
+    """Extracts patches for a certain observation and plots the different
+    steps to visualize the process.
 
+    Parameters
+    ----------
+    figs_dir : pathlib.Path
+        Path to folder where to save the plots
+    da_obs : xr.DataArray
+        DataArray containing the observation (one timestep)
+    """
     intensity = da_obs.data.copy() 
     min_intensity_threshold = 0.1
     max_intensity_threshold = 300
@@ -157,12 +188,31 @@ def plot_patches(figs_dir: pathlib.Path,
 def plot_obs(figs_dir: pathlib.Path,
              ds_obs: xr.Dataset,
              geodata: dict = None,
-             bbox: Tuple[int] = None,
+             bbox: Tuple[int, int] = None,
              save_gif: bool = True,
              fps: int = 4,
-             figsize=(8, 5)
+             figsize: Tuple[int, int] = (8, 5)
             ):
-    
+    """Plots the observations given in the dataset and saves each
+    timestep separately, and if specified, combines them into a gif.
+
+    Parameters
+    ----------
+    figs_dir : pathlib.Path
+        Path to folder where to save the plots
+    ds_obs : xr.Dataset
+        Dataset containing the observations
+    geodata : dict, optional
+        Metadata to plot the base map, by default None
+    bbox : Tuple[int], optional
+        Bounding box to crop the data and base map, by default None
+    save_gif : bool, optional
+        Whether to combine all the plots into a gif, by default True
+    fps : int, optional
+        Number of frames per second, by default 4
+    figsize : Tuple[int, int], optional
+        Size of the plots, by default (8, 5)
+    """
     figs_dir.mkdir(exist_ok=True)
     (figs_dir / "tmp").mkdir(exist_ok=True)
     # Load in memory
@@ -255,7 +305,29 @@ def plot_forecast_error_comparison(figs_dir: pathlib.Path,
                                    fps: int = 4,
                                    suptitle_prefix: str = "",
                                  ):
-    
+    """Plots the forecast and the observation side-to-side along with
+    an error map next to them, for each lead time and saves them separately.
+    If specified, it combines all the plots into a gif.
+
+    Parameters
+    ----------
+    figs_dir : pathlib.Path
+        Path to folder where to save the plots
+    ds_forecast : xr.Dataset
+        Dataset containing the forecast
+    ds_obs : xr.Dataset
+        Dataset containing the observations
+    geodata : dict, optional
+        Metadata to plot the basemap, by default None
+    aspect_cbar : int, optional
+        Ratio of long to short dimensions in the colorbar, by default 40
+    save_gif : bool, optional
+        Whether to combine all the plots into a gif, by default True
+    fps : int, optional
+        Number of frames per second, by default 4
+    suptitle_prefix : str, optional
+        Prefix to add to the suptitle over all the plots, by default ""
+    """
     figs_dir.mkdir(exist_ok=True)
 
     forecast_reference_time = str(ds_forecast['forecast_reference_time'].values.astype('datetime64[s]'))
@@ -394,7 +466,29 @@ def plot_forecast_comparison(figs_dir: pathlib.Path,
                              fps: int = 4,
                              suptitle_prefix: str = "",
                             ):
-    
+    """Plots the forecast and the observation side-to-side along, 
+    for each lead time and saves them separately. If specified, 
+    it combines all the plots into a gif.
+
+    Parameters
+    ----------
+    figs_dir : pathlib.Path
+        Path to folder where to save the plots
+    ds_forecast : xr.Dataset
+        Dataset containing the forecast
+    ds_obs : xr.Dataset
+        Dataset containing the observations
+    geodata : dict, optional
+        Metadata to plot the basemap, by default None
+    aspect_cbar : int, optional
+        Ratio of long to short dimensions in the colorbar, by default 40
+    save_gif : bool, optional
+        Whether to combine all the plots into a gif, by default True
+    fps : int, optional
+        Number of frames per second, by default 4
+    suptitle_prefix : str, optional
+        Prefix to add to the suptitle over all the plots, by default ""
+    """
     figs_dir.mkdir(exist_ok=True)
 
     forecast_reference_time = str(ds_forecast['forecast_reference_time'].values.astype('datetime64[s]'))

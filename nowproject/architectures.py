@@ -1,35 +1,24 @@
 import torch
 import numpy as np
-from typing import List, Union, Dict
+from typing import List, Tuple, Union, Dict
 from torch import nn
-from torch.nn import (
-    Conv2d,
-    ReLU,
-    MaxPool2d,
-    AvgPool2d,
-    Upsample,
-    Sequential
-)
 import torch.nn.functional as F
 
-from nowproject.dl_models.layers_res_conv import (
-    upsampling,
+from nowproject.models.layers_res_conv import (
     downsampling,
-    upsamplingLast,
     UpsamplingResConv
 )
 
-from nowproject.dl_models.layers_optical_flow import (
+from nowproject.models.layers_optical_flow import (
     RAFTOpticalFlow
 )
 
-from nowproject.utils.utils_models import (
-    check_skip_connection,
+from nowproject.models.models_utils import (
     reshape_input_for_decoding,
     reshape_input_for_encoding
 )
 
-from nowproject.dl_models.layers_3d import (
+from nowproject.models.layers_3d import (
     DecoderMultiScale, 
     DoubleConv, 
     ExtResNetBlock, 
@@ -37,62 +26,125 @@ from nowproject.dl_models.layers_3d import (
     ResNetBlock, 
     create_encoders_multiscale
 )
-from nowproject.dl_models.unet3d import Base3DUNet, number_of_features_per_level
-
-class UNet3D(Base3DUNet):
-    """
-    3DUnet model from
-    `"3D U-Net: Learning Dense Volumetric Segmentation from Sparse Annotation"
-        <https://arxiv.org/pdf/1606.06650.pdf>`.
-    Uses `DoubleConv` as a basic_module and nearest neighbor upsampling in the decoder
-    """
-
-    def __init__(self, tensor_info, final_sigmoid=False, f_maps=64, layer_order=("conv", "relu"),
-                 num_groups=8, num_levels=4, is_segmentation=False, conv_padding=1, **kwargs):
-        super(UNet3D, self).__init__(tensor_info=tensor_info,
-                                     final_sigmoid=final_sigmoid,
-                                     basic_module=DoubleConv,
-                                     f_maps=f_maps,
-                                     layer_order=layer_order,
-                                     num_groups=num_groups,
-                                     num_levels=num_levels,
-                                     is_segmentation=is_segmentation,
-                                     conv_padding=conv_padding,
-                                     **kwargs)
+from nowproject.models.unet3d import Base3DUNet, number_of_features_per_level
 
 
 class ResidualUNet3D(Base3DUNet):
     """
-    Residual 3DUnet model implementation based on https://arxiv.org/pdf/1706.00120.pdf.
-    Uses ExtResNetBlock as a basic building block, summation joining instead
-    of concatenation joining and transposed convolutions for upsampling (watch out for block artifacts).
-    Since the model effectively becomes a residual net, in theory it allows for deeper UNet.
+    3DUNet model with ResBlocks as base module and transposed convolutions for upsampling.
     """
 
-    def __init__(self, tensor_info, final_sigmoid=False, f_maps=64, layer_order=("conv", "relu"),
-                 num_groups=8, num_levels=5, is_segmentation=False, conv_padding=1, pool_kernel_size=(1, 2, 2), 
-                 conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), **kwargs):
+    def __init__(self, 
+                 tensor_info: dict, 
+                 f_maps: Union[int, List[int]] = 64, 
+                 layer_order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"),
+                 num_groups: int = 8, 
+                 num_levels: int = 5, 
+                 conv_padding: int = 1, 
+                 pool_kernel_size: Union[int, Tuple[int, ...]] = (1, 2, 2), 
+                 conv_kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 upsample_scale_factor: Union[int, Tuple[int, ...]] = (1, 2, 2),
+                 increment_learning: bool = True, 
+                 pool_type: str = "max", 
+                 **kwargs):
+        """
+        Initialize the ResidualUNet3D.
+
+        Parameters
+        ----------
+        tensor_info : dict
+            Dictionary containing all the input and output tensor information
+        f_maps : Union[int, List[int]], optional
+            Number of feature maps, by default 64
+        layer_order : Union[List[str], Tuple[str]], optional
+            The order of the layers in the basic convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for the GroupNorm, by default 8
+        num_levels : int, optional
+            Depth of the network, by default 5
+        conv_padding : int, optional
+            Padding of the convolution, by default 1
+        pool_kernel_size : Union[int, Tuple[int]], optional
+            Kernel size of the pooling, by default (1, 2, 2)
+        conv_kernel_size : Union[int, Tuple[int]], optional
+            Kernel size of the convolution, by default 3
+        upsample_scale_factor : Union[int, Tuple[int]], optional
+            Kernel size of the transposed convolution, by default (1, 2, 2)
+        increment_learning : bool, optional
+            Whether to perform increment learning or not, by default True
+        pool_type : str, optional
+            Type of pooling layer to use, by default "max"
+        """
         super().__init__(tensor_info=tensor_info,
-                        final_sigmoid=final_sigmoid,
+                        final_sigmoid=False,
                         basic_module=ResNetBlock,
                         f_maps=f_maps,
                         layer_order=layer_order,
                         num_groups=num_groups,
                         num_levels=num_levels,
-                        is_segmentation=is_segmentation,
+                        is_segmentation=False,
                         conv_padding=conv_padding,
                         pool_kernel_size=pool_kernel_size,
                         conv_kernel_size=conv_kernel_size,
                         upsample_scale_factor=upsample_scale_factor,
+                        increment_learning=increment_learning,
+                        pool_type=pool_type,
                         **kwargs)
 
 
 class MultiScaleResidualConv(nn.Module):
-    def __init__(self, tensor_info, f_maps=64, layer_order=("conv", "relu"), basic_module=ExtResNetBlock,
-                 num_groups=8, num_levels=3, conv_padding=1, pooling_depth=2, pool_kernel_size=(1, 2, 2), 
-                 conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), final_conv_kernel=(4, 1, 1), 
-                 increment_learning=True, pool_type="max"):
-        
+    """
+    Model that treats the input signals at multiple scales in parallel before joining them at the end
+    of the encoding. Upsamples the downscaled encodings with transposed convolutions.
+    """
+    def __init__(self, 
+                 tensor_info: dict, 
+                 f_maps: int = 64, 
+                 layer_order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), 
+                 basic_module: nn.Module = ResNetBlock,
+                 num_groups: int = 8, 
+                 num_levels: int = 3, 
+                 conv_padding: int = 1, 
+                 pooling_depth: int = 2, 
+                 pool_kernel_size: Union[int, Tuple[int, ...]] = (1, 2, 2), 
+                 conv_kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 upsample_scale_factor: Union[int, Tuple[int, ...]] = (1, 2, 2), 
+                 final_conv_kernel: Union[int, Tuple[int, ...]] = (4, 1, 1), 
+                 increment_learning: bool = True, 
+                 pool_type: str = "max"):
+        """Initialize the MultiScaleResidualConv.
+
+        Parameters
+        ----------
+        tensor_info : dict
+            Dictionary containing all the input and output information.
+        f_maps : int, optional
+            Number of feature maps, by default 64
+        layer_order : Union[List[str], Tuple[str]], optional
+            Order of the layers in the basic convolutional block, by default ("conv", "relu")
+        basic_module : nn.Module, optional
+            Basic model for the encoder/decoder, by default ExtResNetBlock
+        num_groups : int, optional
+            Number of groups to divide the channels into for the GroupNorm, by default 8
+        num_levels : int, optional
+            Number of levels in the encoder/decoder path, by default 3
+        conv_padding : int, optional
+            Padding of the convolution, by default 1
+        pooling_depth : int, optional
+            Number of pooling levels, by default 2
+        pool_kernel_size : Union[int, Tuple[int]], optional
+            Kernel size of the pooling, by default (1, 2, 2)
+        conv_kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        upsample_scale_factor : Union[int, Tuple[int]], optional
+            Kernel size of the transposed convolution, by default (1, 2, 2)
+        final_conv_kernel : Union[int, Tuple[int]], optional
+            Kernel size of the final convolution, by default (4, 1, 1)
+        increment_learning : bool, optional
+            Whether to perform increment learning or not, by default True
+        pool_type : str, optional
+            Type of pooling layer to use, by default "max"
+        """
         super().__init__()
 
         self.dim_names = tensor_info["dim_order"]["dynamic"]
@@ -209,6 +261,10 @@ class MultiScaleResidualConv(nn.Module):
 
 
 class resConv(nn.Module):
+    """
+    Model inspired from Cuomo et al. 2021, "Use of Deep Learning for Weather Radar Nowcasting".
+    Similar to UNet3D but downscales with 3D convolutions instead of pooling layers.
+    """
     def __init__(self, tensor_info: dict, 
                 # ConvBlock Options
                 n_filter: int, 
@@ -218,7 +274,29 @@ class resConv(nn.Module):
                 last_layer_activation: bool = False,
                 optical_flow: bool = False,
                 # Architecture options
-                increment_learning: bool = False):
+                increment_learning: bool = True):
+        """Initialize the resConv model.
+
+        Parameters
+        ----------
+        tensor_info : dict
+            Dictionary containing all the input and output tensor information
+        n_filter : int
+            Number of feature maps
+        first_layer_upsampling_kernels : List[List[int]]
+            Kernel size of the first upsampling layer
+        first_layer_upsampling_stride : List[List[int]]
+            Stride of the first upsampling layer
+        last_convblock_kernel : List[int], optional
+            Kernel size of the last convolutional block, by default [5, 4]
+        last_layer_activation : bool, optional
+            Whether to add an activation after the last convolutional block, by default False
+        optical_flow : bool, optional
+            Whether to estimate the optical flow and advect the field prior
+            to the convolutions, by default False
+        increment_learning : bool, optional
+            Whether to perform increment learning or not, by default True
+        """
         super().__init__()
         
         self.dim_names = tensor_info["dim_order"]["dynamic"]

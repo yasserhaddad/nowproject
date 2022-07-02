@@ -47,9 +47,23 @@ The pipeline's components can be found under `nowproject/`:
   * `predictions.py`: contains the AutoregressivePredictions function.
   * `dataloader.py`: contains all the classes and functions related to the autoregressive dataset and dataloader used in this project.
   * `loss.py`: contains the MSE, LogCosh and FSS losses implemented in this project.
-  * `scalers.py`: contains the different data scalers used in this project. `utils/scalers_modules` contains the scalers along with the parameters we employed.
+  * `scalers.py`: contains the different data scalers used in this project. 
   * `architectures.py`: contains the different 3D architectures implemented in this project. The layers used to build those models can be found under `dl_models/`, in the files `layers_3d.py`, `layers_res_conv.py` and `layers_optical_flow.py`.
-  * `architectures_2d.py`: contains archived 2D architectures that were considered at an earlier stage in the project.
-  * `plot_precip.py` and `plot_map.py` under `utils/`: contain code to plot data on maps, and in our case precipitation.
-  * `plot_skills.py` under `utils/`: contain code to plot skills of benchmarks and models.
+  * `config.py`: contains functions to process the config files passed to the pipeline.
+  * `verification/`: contains the files related to the verification pipeline. 
+    * `verification.py` features the verification routine with the different metrics we computed for the project.
+    * `plot_precip.py` and `plot_map.py` contain code to plot data on maps, and in our case precipitation.
+    * `plot_skills.py` includes code to plot skills of benchmarks and models.
+  * `models/`: 
+    * `layers_3d.py`, `layers_res_conv.py` and `layers_optical_flow.py` include the the layers used to build the models in `architectures.py`.
+    * `utils_models.py` contains functions used in layers.
+    * `architectures_2d.py` anf `layers_2d.py` feature respecitvely the archived 2D architectures and their corresponding layers that were considered at an earlier stage in the project.
+  * `data/`:
+    * The `dataset/` folder includes all the different files concerning the construction of the dataset and the different configs used for the encoding.
+    * `data_utils.py` contains functions to load the data and to accomodate for patches in the pipeline.
+    * `patches_utils.py` features all the functions related to the extraction of patches.
+    * `scalers_modules.py` implements the different scalers of `scalers.py` along with the parameters we employed.
+
+  
+
 

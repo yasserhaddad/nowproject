@@ -2,24 +2,24 @@
 # %autoreload 2
 
 from pathlib import Path
-from matplotlib.patches import Rectangle
 import numpy as np
 import xarray as xr
 import pandas as pd
+from tabulate import tabulate
 
 from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, xr_sel_coords_between
-from nowproject.utils.plot_map import FixPointNormalize, plot_obs, plot_stats_map, plot_patches,\
+from nowproject.verification.plot_map import FixPointNormalize, plot_obs, plot_stats_map, plot_patches,\
                                         rescale_spatial_axes, plot_forecast_comparison
-from nowproject.utils.plot_skills import plot_averaged_skill, plot_comparison_averaged_skills, plot_averaged_skills
-from nowproject.data.data_config import METADATA_CH, METADATA
+from nowproject.verification.plot_skills import plot_averaged_skill, plot_comparison_averaged_skills, plot_averaged_skills
+from nowproject.data.dataset.data_config import METADATA_CH, METADATA
 from pysteps.visualization.utils import proj4_to_cartopy
 
 import matplotlib.pyplot as plt
 import matplotlib.colors
 
-import seaborn as sns
+from nowproject.verification.plot_precip import _plot_map_cartopy
 
-from nowproject.utils.plot_precip import _plot_map_cartopy
+import seaborn as sns
 sns.set_theme()
 
 default_data_dir = "/ltenas3/0_Data/NowProject/"
@@ -105,14 +105,26 @@ data_patches = data_patches[data_patches.time.dt.minute % 5 == 0]
 
 
 ## Statistics
-
 print("Timesteps coverage", np.round(len(np.unique(data_patches.time)) / len(data_dynamic.time) * 100, 2))
 
-mean = data_patches[["Max", "Min", "Mean", "Area >= 1", "Area >= 5", "Area >= 20", "Sum", 
+mean = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
                     "Dry-Wet Area Ratio"]].mean().to_frame().T.round(2)
-median = data_patches[["Max", "Min", "Mean", "Area >= 1", "Area >= 5", "Area >= 20", "Sum", 
+median = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
                     "Dry-Wet Area Ratio"]].median().to_frame().T.round(2)
+q_25 = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
+                    "Dry-Wet Area Ratio"]].quantile(0.25).to_frame().T.round(2)
+q_75 = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
+                    "Dry-Wet Area Ratio"]].quantile(0.75).to_frame().T.round(2)
+q_95 = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
+                    "Dry-Wet Area Ratio"]].quantile(0.95).to_frame().T.round(2)
+min = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
+                    "Dry-Wet Area Ratio"]].min().to_frame().T.round(2)
+max = data_patches[["Min", "Max", "Mean", "Sum", "Area >= 1", "Area >= 5", "Area >= 20", 
+                    "Dry-Wet Area Ratio"]].max().to_frame().T.round(2)
 
+combined = pd.concat([min, q_25, median, mean, q_75, q_95, max], ignore_index=False)
+combined.index = ["Min", "Q25", "Median", "Mean", "Q75", "Q95", "Max"]
+combined
 
 
 # Topographic data
@@ -214,33 +226,6 @@ plot_forecast_comparison(results_figs_dir / "benchmark_steps_median",
 benchmark_skills_dir = benchmark_dir_path / "combined_ch" / "skills"
 models_dir = data_dir_path / "experiments"
 
-# for key in (ds_forecast_benchmark.data_vars.keys()):
-#     skills_dir = (benchmark_skills_dir / key)
-#     ds_cont_averaged_skill = xr.open_dataset(skills_dir / "deterministic_continuous_global_skill.nc")
-#     ds_cat_averaged_skill = xr.open_dataset(skills_dir / "deterministic_categorical_global_skill.nc")
-#     ds_spatial_average_skill = xr.open_dataset(skills_dir / "deterministic_spatial_global_skill.nc")
-
-#     (skills_dir / "figs").mkdir(exist_ok=True)
-#     plot_averaged_skill(ds_cont_averaged_skill, skill="RMSE", variables=["feature"]).savefig(
-#         skills_dir / "figs" / "RMSE_skill.png"
-#     )
-#     plot_averaged_skills(ds_cont_averaged_skill, 
-#                         skills=["BIAS", "RMSE"], 
-#                         variables=["feature"], figsize=(15, 8)).savefig(
-#         skills_dir / "figs" / "averaged_continuous_skill.png"
-#     )
-
-#     plot_averaged_skills(ds_cat_averaged_skill, 
-#                         skills=["POD", "CSI", "F1"], variables=["feature"],
-#                         figsize=(15, 12)).savefig(
-#         skills_dir / "figs" / "averaged_categorical_skills.png"
-#     )
-
-#     plot_averaged_skills(ds_spatial_average_skill, 
-#                         skills=["SSIM", "FSS"], variables=["feature"], figsize=(15, 8)).savefig(
-#         skills_dir / "figs" / "averaged_spatial_skills.png"
-#     )
-
 thresholds = [0.1, 5, 10]
 spatial_scales = [5]
 
@@ -263,11 +248,48 @@ for experiment in models_dir.glob("*/model_skills/"):
             spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
 
 
+legend_labels = ["S-PROG", "STEPS Mean", "STEPS Median", "UNet3D-MSEMasked", "UNet3D-MSEMaskedWeighted", 
+                 "UNet3D-MSEMasked-ELU", "resConv64-MSEMasked", "UNet3D-MSEMaskedWeighted-ELU", "UNet3D-MSEMasked-GN-ELU"]
+
+## Tables
+
+def display_results(list_ds_skills, skills, labels_rows):
+    table = []
+    leadtimes = list_ds_skills[0].leadtime.values
+    leadtimes = [leadtimes[i] for i in [0, int(len(leadtimes)/2-1), int(len(leadtimes)-1)]]
+    for ds_skills in list_ds_skills:
+        results = []
+        for skill in skills:
+            results.extend(ds_skills.sel(skill=skill, leadtime=leadtimes).feature.round(3).values.tolist())
+        table.append(results)
+    
+    table = pd.DataFrame(table, index=labels_rows)
+    table.index.names = ['model']
+    table.columns.names= ['metric']
+
+   
+    iterable = [skills, [str(l.astype("timedelta64[m]")).split(" ")[0] for l in leadtimes]]
+    table.columns = pd.MultiIndex.from_product(iterable, names= ['group', 'subgroup'])
+
+    h = [table.index.names[0] +'/'+ table.columns.names[0]] + list(map('\n'.join, table.columns.tolist()))
+    print(tabulate(table, headers= h, tablefmt= 'fancy_grid'))
+
+    print("\nTabulate Latex:")
+    print(tabulate(table, headers=h, tablefmt="latex"))
+        
+
+display_results(cont, ["RMSE", "BIAS"], legend_labels)
+
+for thr in thresholds:
+    print("Categorical metrics for threshold", thr)
+    display_results(cat[thr], ["POD", "CSI", "F1"], legend_labels)
+    print("Spatial metrics for threshold", thr)
+    display_results(spatial[thr], ["SSIM", "FSS"], legend_labels)
 
 skills_figs_dir = figs_dir / "results" / "skills"
 skills_figs_dir.mkdir(exist_ok=True)
 
-legend_labels = ["S-PROG", "STEPS Mean", "STEPS Median", "UNet3D-MSEMasked", "UNet3D-MSEMaskedWeighted"]
+
 
 plot_comparison_averaged_skills(cont, 
                     skills=["BIAS", "RMSE"], variables=["feature"], 

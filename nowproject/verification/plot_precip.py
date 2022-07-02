@@ -21,16 +21,16 @@ from pysteps.visualization.utils import get_geogrid
 PRECIP_VALID_TYPES = ("intensity", "depth", "prob")
 PRECIP_VALID_UNITS = ("mm/h", "mm", "dBZ")
 
-
+# Inspired from pySTEPS : https://pysteps.readthedocs.io/en/stable/generated/pysteps.visualization.precipfields.plot_precip_field.html
 def _plot_map_cartopy(
     crs: ccrs.Projection,
-    figsize: tuple = (8, 5),
+    figsize: Tuple[int, int] = (8, 5),
     cartopy_scale: str = "50m",
     ax: Axes = None,
     drawlonlatlines: bool = False,
     drawlonlatlabels: bool = True,
     lw: float = 0.5
-):
+) -> Axes:
     """Plot coastlines, countries, rivers and meridians/parallels using cartopy.
 
     Parameters
@@ -217,7 +217,7 @@ def plot_single_precip(da: xr.DataArray, geodata: dict, ax: Axes = None, ptype="
     Returns
     -------
     Tuple[GeoAxesSubplot, AxesImage] 
-        The subplot 
+        Subplotn and Axes objects 
     """
     if not cmap and not norm:
         cmap, norm, clevs, clevs_str = get_colormap(ptype, units, colorscale)

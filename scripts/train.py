@@ -21,7 +21,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
@@ -38,12 +38,11 @@ from nowproject.utils.config import (
     create_test_events_time_range
 )
 
-from nowproject.utils.verification import verification_routine
+from nowproject.verification.verification import verification_routine
 
 # from xverif import xverif
 
 # Project specific functions
-from torch import nn
 import nowproject.architectures as dl_architectures
 from nowproject.loss import (
     FSSLoss,
@@ -54,15 +53,14 @@ from nowproject.loss import (
 )
 from nowproject.training import AutoregressiveTraining
 from nowproject.predictions import AutoregressivePredictions
-from nowproject.utils.plot_skills import ( 
+from nowproject.verification.plot_skills import ( 
     plot_averaged_skill,
     plot_averaged_skills, 
     plot_skills_distribution
 )
-from nowproject.utils.plot_map import (
+from nowproject.verification.plot_map import (
     plot_forecast_comparison
 )
-from nowproject.data.data_config import METADATA_CH
 
 from nowproject.scalers import (
     Scaler,
@@ -73,12 +71,12 @@ from nowproject.scalers import (
     bin_transform,
     bin_inverse_transform
 )
-from nowproject.utils.scalers_modules import (
+from nowproject.data.scalers_modules import (
     log_normalize_scaler,
     normalize_scaler,
     bin_scaler
 )
-from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
+from nowproject.data.dataset.data_config import METADATA, BOTTOM_LEFT_COORDINATES, METADATA_CH
 from nowproject.data.data_utils import (
     load_static_topo_data, 
     prepare_data_dynamic,
@@ -238,10 +236,10 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ##------------------------------------------------------------------------.
     # - Define custom loss function
     
-    criterion = WeightedMSELoss(reduction="mean_masked")
+    # criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
-    # criterion = WeightedMSELoss(reduction="mean_masked",
-    #                             weighted_truth=True, weights_params=(5, 4))
+    criterion = WeightedMSELoss(reduction="mean_masked",
+                                weighted_truth=True, weights_params=(5, 1))
     # criterion = LogCoshLoss(masked=True, weighted_truth=True, weights_params=(5, 4))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])

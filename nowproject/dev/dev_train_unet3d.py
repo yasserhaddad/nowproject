@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 import torch
 
-from nowproject.dl_models.unet3d import ResidualUNet3D
+from nowproject.models.unet3d import ResidualUNet3D
 
 import time
 import dask
@@ -16,7 +16,7 @@ import numpy as np
 from torch import optim
 from torchinfo import summary
 from nowproject.dataloader import AutoregressivePatchLearningDataLoader, AutoregressivePatchLearningDataset
-from nowproject.utils.utils_models import inverse_transform_data_for_raft, reshape_input_for_encoding
+from nowproject.models.utils_models import inverse_transform_data_for_raft, reshape_input_for_encoding
 from xforecasting.dataloader_autoregressive import get_aligned_ar_batch
 
 from xforecasting.utils.io import get_ar_model_tensor_info
@@ -27,7 +27,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
@@ -51,7 +51,7 @@ from nowproject.loss import (
     LogCoshLoss, 
     reshape_tensors_4_loss
 )
-from nowproject.data.data_config import METADATA_CH
+from nowproject.data.dataset.data_config import METADATA_CH
 
 from nowproject.scalers import (
     Scaler,
@@ -62,7 +62,7 @@ from nowproject.scalers import (
     bin_transform,
     bin_inverse_transform
 )
-from nowproject.utils.scalers_modules import (
+from nowproject.data.scalers_modules import (
     log_normalize_scaler,
     normalize_scaler,
     bin_scaler

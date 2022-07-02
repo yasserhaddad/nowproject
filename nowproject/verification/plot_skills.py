@@ -7,46 +7,12 @@ import pyproj
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.colors import Colormap, Normalize
 import matplotlib.pyplot as plt
 
 import seaborn as sns
 sns.set_theme()
-
-SKILL_CMAP_DICT = {
-    "error_CoV": plt.get_cmap("RdYlBu"),
-    "obs_CoV": plt.get_cmap("YlOrRd"),
-    "pred_CoV": plt.get_cmap("YlOrRd"),
-    # Magnitude
-    "BIAS": plt.get_cmap("BrBG"),
-    "relBIAS": plt.get_cmap("BrBG"),
-    "percBIAS": plt.get_cmap("BrBG"),
-    "MAE": plt.get_cmap("Reds"),
-    "relMAE": plt.get_cmap("Reds"),
-    "percMAE": plt.get_cmap("Reds"),
-    "MSE": plt.get_cmap("Reds"),
-    "relMSE": plt.get_cmap("Reds"),
-    "RMSE": plt.get_cmap("Reds"),
-    "relRMSE": plt.get_cmap("Reds"),
-    # Average
-    "rMean": plt.get_cmap("BrBG"),
-    "diffMean": plt.get_cmap("BrBG"),
-    # Variability
-    "rSD": plt.get_cmap("PRGn"),
-    "diffSD": plt.get_cmap("PRGn"),
-    "rCoV": plt.get_cmap("PRGn"),
-    "diffCoV": plt.get_cmap("PRGn"),
-    # Correlation
-    "pearson_R": plt.get_cmap("Greens"),
-    "pearson_R2": plt.get_cmap("Greens"),
-    "spearman_R": plt.get_cmap("Greens"),
-    "spearman_R2": plt.get_cmap("Greens"),
-    "pearson_R_pvalue": plt.get_cmap("Purples"),
-    "spearman_R_pvalue": plt.get_cmap("Purples"),
-    # Overall skills
-    "NSE": plt.get_cmap("Spectral"),
-    "KGE": plt.get_cmap("Spectral"),
-}
 
 SKILL_CBAR_EXTEND_DICT = {
     "error_CoV": "both",
@@ -114,9 +80,33 @@ SKILL_YLIM_DICT = {
 
 
 def plot_averaged_skill(
-    ds_averaged_skill, skill="RMSE", variables=["precip"], n_leadtimes=None,
-    title=None
-):
+    ds_averaged_skill: xr.Dataset, 
+    skill: str = "RMSE", 
+    variables: List[str] = ["precip"], 
+    n_leadtimes: int = None,
+    title: str = None
+) -> Figure:
+    """Plot the averaged skill as a function of leadtime.
+
+    Parameters
+    ----------
+    ds_averaged_skill : xr.Dataset
+        Dataset containing the averaged skills
+    skill : str, optional
+        Skill to plot, by default "RMSE"
+    variables : List[str], optional
+        Variables to plot, by default ["precip"]
+    n_leadtimes : int, optional
+        Number of leadtimes, by default None
+    title : str, optional
+        Title of the plot, if None, the title is the name
+        the variable, by default None
+
+    Returns
+    -------
+    Figure
+        Figure containing the plot of the averaged skill
+    """
     if not n_leadtimes:
         n_leadtimes = len(ds_averaged_skill.leadtime)
     # Plot first n_leadtimes
@@ -167,12 +157,32 @@ def plot_averaged_skill(
 
 
 def plot_averaged_skills(
-    ds_averaged_skill,
-    skills=["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
-    variables=["precip"],
-    n_leadtimes=None,
-    figsize=(12, 19)
-):
+    ds_averaged_skill: xr.Dataset,
+    skills: List[str] = ["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
+    variables: List[str] = ["precip"],
+    n_leadtimes: int = None,
+    figsize: Tuple[int, int]=(12, 19)
+) -> Figure:
+    """Plot the indicated averaged skills as a function of leadtime.
+
+    Parameters
+    ----------
+    ds_averaged_skill : xr.Dataset
+        Dataset containing the averaged skill
+    skills : List[str], optional
+        List of skills to plot, by default ["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"]
+    variables : List[str], optional
+        Variables to plot, by default ["precip"]
+    n_leadtimes : int, optional
+        Number of lead times, by default None
+    figsize : Tuple[int, int], optional
+        Size of the figure, by default (12, 19)
+
+    Returns
+    -------
+    Figure
+        Figure containing the plot of the averaged skills
+    """
     if not n_leadtimes:
         n_leadtimes = len(ds_averaged_skill.leadtime)
     # Plot first n_leadtimes
@@ -226,14 +236,41 @@ def plot_averaged_skills(
 
 
 def plot_comparison_averaged_skills(
-    list_ds_averaged_skill,
-    skills=["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
-    variables=["precip"],
-    legend_labels=None,
-    n_leadtimes=None,
-    title=None,
-    figsize=(17, 19)
-):
+    list_ds_averaged_skill: List[xr.Dataset],
+    skills: List[str]=["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
+    variables: List[str] = ["precip"],
+    legend_labels: List[str] = None,
+    n_leadtimes: int = None,
+    title: str = None,
+    figsize: Tuple[int, int] = (17, 19)
+) -> Figure:
+    """Plot the comparison of the averaged skills of different forecasts as a function of
+    lead time.
+
+    Parameters
+    ----------
+    list_ds_averaged_skill : List[xr.Dataset]
+        List of datasets containing the averaged skills
+    skills : List[str], optional
+        Skills to plot, by default ["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"]
+    variables : List[str], optional
+        Variables to plot, by default ["precip"]
+    legend_labels : List[str], optional
+        Labels corresponding to the names of the different 
+        forecast to compare, by default None
+    n_leadtimes : int, optional
+        Number of lead times, by default None
+    title : str, optional
+        Title of the plot, if None, the title is the name
+        of the variable, by default None
+    figsize : Tuple[int, int], optional
+        Size of the figure, by default (17, 19)
+
+    Returns
+    -------
+    Figure
+        Figure containing the comparison of the different forecasts for the averaged skills
+    """
     if not n_leadtimes:
         n_leadtimes = len(list_ds_averaged_skill[0].leadtime)
     # Plot first n_leadtimes
@@ -295,11 +332,29 @@ def plot_comparison_averaged_skills(
 
 
 def plot_skills_distribution(
-    ds_skill,
-    skills=["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
-    variables=["precip"],
-    n_leadtimes=None,
-):
+    ds_skill: xr.Dataset,
+    skills: List[str] = ["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"],
+    variables: List[str] = ["precip"],
+    n_leadtimes: int = None,
+) -> Figure:
+    """Plot the skills distribution as a function of leadtime.
+
+    Parameters
+    ----------
+    ds_skill : xr.Dataset
+        Dataset containing the non-averaged skills
+    skills : List[str], optional
+        Skills to plot, by default ["BIAS", "RMSE", "rSD", "pearson_R2", "KGE", "error_CoV"]
+    variables : List[str], optional
+        Variables to plot, by default ["precip"]
+    n_leadtimes : int, optional
+        Number of leadtimes, by default None
+
+    Returns
+    -------
+    Figure
+        Figure containing the plot of the distribution of skills
+    """
     if not n_leadtimes:
         n_leadtimes = len(ds_skill.leadtime)
     # Plot first n_leadtimes

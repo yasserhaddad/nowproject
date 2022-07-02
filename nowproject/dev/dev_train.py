@@ -20,7 +20,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
@@ -45,7 +45,7 @@ import nowproject.architectures as dl_architectures
 from nowproject.loss import WeightedMSELoss, reshape_tensors_4_loss
 from nowproject.training import AutoregressiveTraining
 from nowproject.utils.scalers import RainBinScaler, RainScaler
-from nowproject.utils.plot_skills import plot_averaged_skill, plot_averaged_skills, plot_skills_distribution
+from nowproject.verification.plot_skills import plot_averaged_skill, plot_averaged_skills, plot_skills_distribution
 
 model_dir = Path("/home/haddad/experiments/RNN-AR6-UNet-AvgPooling-Patches-LogNormalizeScaler-MSE/")
 

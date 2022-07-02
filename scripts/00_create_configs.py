@@ -3,7 +3,7 @@ import pathlib
 
 sys.path.append("../")
 
-from nowproject.utils.config import (
+from nowproject.config import (
     get_default_settings,
     read_config_file,
     write_config_file,

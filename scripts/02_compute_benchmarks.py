@@ -5,14 +5,14 @@ import numpy as np
 from pathlib import Path
 from pysteps import motion, nowcasts
 
-from nowproject.utils.config import (
+from nowproject.config import (
     create_test_events_autoregressive_time_range
 )
 from nowproject.data.data_utils import prepare_data_dynamic, xr_sel_coords_between
 from xforecasting.predictions_autoregressive import reshape_forecasts_for_verification
 
 from pysteps.utils import transformation
-from nowproject.utils.verification import verification_routine
+from nowproject.verification.verification import verification_routine
 
 
 NUM_WORKERS = 15
