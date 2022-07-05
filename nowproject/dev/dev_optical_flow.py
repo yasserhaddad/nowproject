@@ -19,8 +19,8 @@ import torch.nn.functional as F
 import torchvision.transforms.functional as F_vision
 from torchvision.utils import flow_to_image
 
-from nowproject.utils.plot_map import plot_forecast_comparison, plot_forecast_error_comparison
-from nowproject.data.data_config import METADATA_CH
+from nowproject.visualization.plot_map import plot_forecast_comparison, plot_forecast_error_comparison
+from nowproject.data.dataset.data_config import METADATA_CH
 
 def plot(imgs, **imshow_kwargs):
     if not isinstance(imgs[0], list):

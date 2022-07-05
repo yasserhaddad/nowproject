@@ -286,7 +286,7 @@ def plot_comparison_averaged_skills(
         plt.suptitle(title, y=1.03)
     # Initialize axes
     ax_i = 0
-    axs = axs.flatten()
+    axs = axs.flatten() if type(axs) == np.ndarray else [axs]
     for skill in skills:
         for var in variables:
             for ds_averaged_skill in list_ds_averaged_skill:

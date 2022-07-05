@@ -6,32 +6,146 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from tabulate import tabulate
+from nowproject.config import create_test_events_autoregressive_time_range
 
 from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, xr_sel_coords_between
-from nowproject.verification.plot_map import FixPointNormalize, plot_obs, plot_stats_map, plot_patches,\
-                                        rescale_spatial_axes, plot_forecast_comparison
-from nowproject.verification.plot_skills import plot_averaged_skill, plot_comparison_averaged_skills, plot_averaged_skills
+from nowproject.visualization.plot_map import FixPointNormalize, plot_obs, plot_stats_map, plot_patches,\
+                                        rescale_spatial_axes, plot_forecast_comparison, plot_forecasts_grid
+from nowproject.visualization.plot_skills import plot_averaged_skill, plot_comparison_averaged_skills, plot_averaged_skills
 from nowproject.data.dataset.data_config import METADATA_CH, METADATA
 from pysteps.visualization.utils import proj4_to_cartopy
 
 import matplotlib.pyplot as plt
 import matplotlib.colors
 
-from nowproject.verification.plot_precip import _plot_map_cartopy
+from nowproject.visualization.plot_precip import _plot_map_cartopy
 
 import seaborn as sns
 sns.set_theme()
 
+thresholds = [0.1, 5, 10]
+spatial_scales = [5]
+
+
+def load_models_skills_and_forecasts(models, models_dir):
+    cont = []
+    cat = {thr: [] for thr in thresholds}
+    spatial = {thr: [] for thr in thresholds}
+    forecasts = []
+
+    for model in models:
+        experiment = models_dir / model / "model_skills"
+        cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
+        for thr in thresholds:
+            cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
+            for scale in spatial_scales:
+                spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
+
+        forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+        forecasts.append(xr.open_zarr(forecast_zarr_fpath))
+    
+    return cont, cat, spatial, forecasts
+
+
+def display_results(list_ds_skills, skills, labels_rows):
+    table = []
+    leadtimes = list_ds_skills[0].leadtime.values
+    leadtimes = [leadtimes[i] for i in [0, int(len(leadtimes)/2-1), int(len(leadtimes)-1)]]
+    for ds_skills in list_ds_skills:
+        results = []
+        for skill in skills:
+            results.extend(ds_skills.sel(skill=skill, leadtime=leadtimes).feature.round(3).values.tolist())
+        table.append(results)
+    
+    table = pd.DataFrame(table, index=labels_rows)
+    table.index.names = ['model']
+    table.columns.names= ['metric']
+
+   
+    iterable = [skills, [str(l.astype("timedelta64[m]")).split(" ")[0] for l in leadtimes]]
+    table.columns = pd.MultiIndex.from_product(iterable, names= ['group', 'subgroup'])
+
+    h = [table.index.names[0] +'/'+ table.columns.names[0]] + list(map('\n'.join, table.columns.tolist()))
+    print(tabulate(table, headers= h, tablefmt= 'fancy_grid'))
+
+    print("\nTabulate Latex:")
+    print(tabulate(table, headers=h, tablefmt="latex"))
+
+
+def plot_forecasts_and_skills(forecasts, data_dynamic, legend_labels, forecasts_figs_dir, suptitle_prefix, 
+                              filename_prefix, cont, cat, spatial, skills_figs_dir, geodata=METADATA_CH):
+    for timestep in timesteps:
+        list_forecasts = [ds.sel(forecast_reference_time=np.datetime64(timestep)) for ds in forecasts]                        
+
+        plot_forecasts_grid(forecasts_figs_dir,
+                            list_forecasts, data_dynamic,
+                            legend_labels,
+                            forecasts[0].leadtime.values[[0, 5, 11]],
+                            geodata, 
+                            suptitle_prefix=suptitle_prefix,
+                            aspect_cbar=40,
+                            filename_prefix=filename_prefix)
+
+    display_results(cont, ["RMSE", "BIAS"], legend_labels)
+
+    for thr in thresholds:
+        print("Categorical metrics for threshold", thr)
+        display_results(cat[thr], ["POD", "CSI", "F1"], legend_labels)
+        print("Spatial metrics for threshold", thr)
+        display_results(spatial[thr], ["SSIM", "FSS"], legend_labels)
+
+    skills_figs_dir.mkdir(exist_ok=True)
+
+    plot_comparison_averaged_skills(cont, 
+                        skills=["BIAS", "RMSE"], variables=["feature"], 
+                        legend_labels=legend_labels, title=f"Continuous Metrics",
+                        figsize=(12, 8)).savefig(
+        skills_figs_dir / "averaged_continuous_skill.png"
+    )
+
+    for thr in thresholds:
+        plot_comparison_averaged_skills(cat[thr], 
+                            skills=["POD", "CSI", "F1"], variables=["feature"],
+                            legend_labels=legend_labels, title=f"Categorical Metrics, Threshold {thr}",
+                            figsize=(12, 12)).savefig(
+            skills_figs_dir / f"averaged_categorical_skills_thr{thr}.png"
+        )
+
+        plot_comparison_averaged_skills(spatial[thr], legend_labels=legend_labels,
+                            skills=["SSIM", "FSS"], variables=["feature"], title=f"Spatial Metrics, Threshold {thr}",
+                            figsize=(12, 8)).savefig(
+            skills_figs_dir / f"averaged_spatial_skills_thr{thr}.png"
+    )
+
+
 default_data_dir = "/ltenas3/0_Data/NowProject/"
 figs_dir = Path("/home/haddad/thesis_figs/")
 data_dir_path  = Path(default_data_dir)
+models_dir = data_dir_path / "experiments"
+results_figs_dir = figs_dir / "results"
 
 boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
 data_dynamic_ch = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries, 
                                         timestep=5)
+
 data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                     timestep=5)
+
+test_events_path = Path("/home/haddad/nowproject/configs/subset_test_events.json")
+test_events = create_test_events_autoregressive_time_range(test_events_path, 4, 
+                                                               freq="5min")
+
+
+timesteps = [
+    "2016-04-16 18:00:00",
+    "2017-01-12 17:00:00",
+    "2017-01-31 16:00:00",
+    "2017-06-14 16:00:00",
+    "2017-07-07 16:00:00",
+    "2017-08-31 17:00:00"
+]
+
 
 # Example of observation
 time_start = np.datetime64('2021-06-22T17:35:00.000000000')
@@ -174,8 +288,8 @@ p.axes = _plot_map_cartopy(crs_proj,
 plt.savefig(figs_dir / "topographic_map.png", dpi=300, bbox_inches='tight')
 
 
-# Results
-
+##------------------------------------------------------------------------.
+## - Experiments
 results_figs_dir = figs_dir / "results"
 results_figs_dir.mkdir(exist_ok=True)
 
@@ -220,19 +334,117 @@ plot_forecast_comparison(results_figs_dir / "benchmark_steps_median",
                             geodata=METADATA_CH,
                             suptitle_prefix="STEPS Median, ")
 
+## - Compare scalers
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-4epochs-1year/",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-NormalizeScaler-MSEMasked-4epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-BinScaler-MSEMasked-4epochs-1year/"
+]
+
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
+legend_labels = ["Log Normalizer", "Normalizer", "Bin"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of a UNet3D trained with data scaled with different scalers", 
+                          "scalers_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_scalers", 
+                          geodata=METADATA_CH)
+
+## - Compare losses
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-4epochs-1year/",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-LogCoshMasked-4epochs-1year/",
+]
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
+legend_labels = ["MSE Masked", "LogCosh Masked"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of a UNet3D trained with MSE and LogCosh losses", 
+                          "losses_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_losses", 
+                          geodata=METADATA_CH)
 
 
-# Compare skills
+## - Compare models
+models = [
+    "RNN-AR6-resConv64-IncrementLearning-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+]
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
+legend_labels = ["resConv64", "UNet3D-ReLU", "UNet3D-ELU"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of the different implemented models",
+                          "models_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_models", 
+                          geodata=METADATA_CH)
+
+# Compare MSE non-weighted vs weighted
+cont = []
+cat = {thr: [] for thr in thresholds}
+spatial = {thr: [] for thr in thresholds}
+
+
+forecasts = []
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c4-15epochs-1year"
+]
+
+for model in models:
+    experiment = models_dir / model / "model_skills"
+    cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
+    for thr in thresholds:
+        cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
+        for scale in spatial_scales:
+            spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
+
+    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
+
+legend_labels = ["No Weighting", "Weighedtb5c1", "Weighedtb5c4"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of model trained with non-weighted vs weighted MSE",
+                          "weighted_mse_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_weighted_mse", 
+                          geodata=METADATA_CH)
+
+
+
+# Compare best model vs benchmarks
+
+extrapolation_dir_path = data_dir_path / "extrapolation" / "5min_full"
+benchmark_dir_path = data_dir_path / "benchmarks" / "5min_full"
+
+list_ds_lk = []
+list_ds_benchmark = []
+for idx, event in enumerate(test_events):
+    test_event_dir = extrapolation_dir_path / f"test_event_{idx}"
+    list_ds_lk.append(xr.open_zarr(test_event_dir / f"extrapolation_test_event_{idx}.zarr"))
+    test_event_dir = benchmark_dir_path / f"test_event_{idx}"
+    list_ds_benchmark.append(xr.open_zarr(test_event_dir / f"benchmark_test_event_{idx}.zarr"))
+
+ds_lk = xr.concat(list_ds_lk, dim="forecast_reference_time")
+ds_lk = xr_sel_coords_between(ds_lk, **boundaries)
+ds_lk = ds_lk.rename({"lucas_kanade": "feature"})[["feature"]]
+
+ds_benchmark = xr.concat(list_ds_benchmark, dim="forecast_reference_time")
+ds_benchmark = xr_sel_coords_between(ds_benchmark, **boundaries)
+
 benchmark_skills_dir = benchmark_dir_path / "combined_ch" / "skills"
 models_dir = data_dir_path / "experiments"
-
-thresholds = [0.1, 5, 10]
-spatial_scales = [5]
 
 cont = []
 cat = {thr: [] for thr in thresholds}
 spatial = {thr: [] for thr in thresholds}
-for key in (ds_forecast_benchmark.data_vars.keys()):
+for key in (ds_benchmark.data_vars.keys()):
     skills_dir = (benchmark_skills_dir / key)
     cont.append(xr.open_dataset(skills_dir / "deterministic_continuous_global_skill.nc"))
     for thr in thresholds:
@@ -240,75 +452,161 @@ for key in (ds_forecast_benchmark.data_vars.keys()):
         for scale in spatial_scales:
             spatial[thr].append(xr.open_dataset(skills_dir / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
 
-for experiment in models_dir.glob("*/model_skills/"):
+extrapolation_skills_dir = extrapolation_dir_path / "combined_ch" / "skills"
+
+skills_dir = (extrapolation_skills_dir / "lucas_kanade")
+cont.append(xr.open_dataset(skills_dir / "deterministic_continuous_global_skill.nc"))
+for thr in thresholds:
+    cat[thr].append(xr.open_dataset(skills_dir / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
+    for scale in spatial_scales:
+        spatial[thr].append(xr.open_dataset(skills_dir / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
+
+
+
+forecasts = [ds_benchmark.rename({var: "feature"})[["feature"]] \
+                        for var in list(ds_benchmark.data_vars.keys())]
+forecasts += [ds_lk]
+
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c4-15epochs-1year"
+]
+
+for model in models:
+    experiment = models_dir / model / "model_skills"
     cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
     for thr in thresholds:
         cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
         for scale in spatial_scales:
             spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
 
+    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
 
-legend_labels = ["S-PROG", "STEPS Mean", "STEPS Median", "UNet3D-MSEMasked", "UNet3D-MSEMaskedWeighted", 
-                 "UNet3D-MSEMasked-ELU", "resConv64-MSEMasked", "UNet3D-MSEMaskedWeighted-ELU", "UNet3D-MSEMasked-GN-ELU"]
 
-## Tables
+legend_labels = ["S-PROG", "STEPS Mean", "STEPS Median", "Extrapolation", 
+                    "UNet3D-ELU\nMSEMasked\nNonWeighted", "UNet3D-ELU\nMSEMasked\nWeightedb5c4"]
 
-def display_results(list_ds_skills, skills, labels_rows):
-    table = []
-    leadtimes = list_ds_skills[0].leadtime.values
-    leadtimes = [leadtimes[i] for i in [0, int(len(leadtimes)/2-1), int(len(leadtimes)-1)]]
-    for ds_skills in list_ds_skills:
-        results = []
-        for skill in skills:
-            results.extend(ds_skills.sel(skill=skill, leadtime=leadtimes).feature.round(3).values.tolist())
-        table.append(results)
-    
-    table = pd.DataFrame(table, index=labels_rows)
-    table.index.names = ['model']
-    table.columns.names= ['metric']
-
-   
-    iterable = [skills, [str(l.astype("timedelta64[m]")).split(" ")[0] for l in leadtimes]]
-    table.columns = pd.MultiIndex.from_product(iterable, names= ['group', 'subgroup'])
-
-    h = [table.index.names[0] +'/'+ table.columns.names[0]] + list(map('\n'.join, table.columns.tolist()))
-    print(tabulate(table, headers= h, tablefmt= 'fancy_grid'))
-
-    print("\nTabulate Latex:")
-    print(tabulate(table, headers=h, tablefmt="latex"))
-        
-
-display_results(cont, ["RMSE", "BIAS"], legend_labels)
-
-for thr in thresholds:
-    print("Categorical metrics for threshold", thr)
-    display_results(cat[thr], ["POD", "CSI", "F1"], legend_labels)
-    print("Spatial metrics for threshold", thr)
-    display_results(spatial[thr], ["SSIM", "FSS"], legend_labels)
-
-skills_figs_dir = figs_dir / "results" / "skills"
-skills_figs_dir.mkdir(exist_ok=True)
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of 2 UNet3D models and the benchmarks",
+                          "benchmarks_vs_best_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_benchmarks_vs_best", 
+                          geodata=METADATA_CH)
 
 
 
-plot_comparison_averaged_skills(cont, 
-                    skills=["BIAS", "RMSE"], variables=["feature"], 
-                    legend_labels=legend_labels, title=f"Continuous Metrics",
-                    figsize=(12, 8)).savefig(
-    skills_figs_dir / "averaged_continuous_skill.png"
-)
 
-for thr in thresholds:
-    plot_comparison_averaged_skills(cat[thr], 
-                        skills=["POD", "CSI", "F1"], variables=["feature"],
-                        legend_labels=legend_labels, title=f"Categorical Metrics, Threshold {thr}",
-                        figsize=(12, 12)).savefig(
-        skills_figs_dir / f"averaged_categorical_skills_thr{thr}.png"
-    )
+# Adding more training data
+thresholds = [0.1, 5, 10]
+spatial_scales = [5]
 
-    plot_comparison_averaged_skills(spatial[thr], legend_labels=legend_labels,
-                        skills=["SSIM", "FSS"], variables=["feature"], title=f"Spatial Metrics, Threshold {thr}",
-                        figsize=(12, 8)).savefig(
-        skills_figs_dir / f"averaged_spatial_skills_thr{thr}.png"
-    )
+cont = []
+cat = {thr: [] for thr in thresholds}
+spatial = {thr: [] for thr in thresholds}
 
+
+forecasts = []
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-2years"
+]
+
+for model in models:
+    experiment = models_dir / model / "model_skills"
+    cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
+    for thr in thresholds:
+        cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
+        for scale in spatial_scales:
+            spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
+
+    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
+
+legend_labels = ["1 year\n(2018)", "2 years\n(2018-2019)"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of model trained with 1 year vs 2 years of data",
+                          "more_training_data_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_more_data", 
+                          geodata=METADATA_CH)
+
+# No static feature vs DEM
+
+thresholds = [0.1, 5, 10]
+spatial_scales = [5]
+
+cont = []
+cat = {thr: [] for thr in thresholds}
+spatial = {thr: [] for thr in thresholds}
+
+
+forecasts = []
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-DEM-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year"
+]
+
+for model in models:
+    experiment = models_dir / model / "model_skills"
+    cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
+    for thr in thresholds:
+        cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
+        for scale in spatial_scales:
+            spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
+
+    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
+    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
+
+legend_labels = ["No static feature", "DEM"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of model trained with no static feature and with DEM",
+                          "static_features_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_static_features", 
+                          geodata=METADATA_CH)
+
+
+
+# Optical flow comparison
+extrapolation_dir_path = data_dir_path / "extrapolation" / "5min_full"
+list_ds_lk = []
+list_ds_raft = []
+
+cont = []
+cat = {thr: [] for thr in thresholds}
+spatial = {thr: [] for thr in thresholds}
+
+for idx, event in enumerate(test_events):
+    test_event_dir = extrapolation_dir_path / f"test_event_{idx}"
+    list_ds_lk.append(xr.open_zarr(test_event_dir / f"extrapolation_test_event_{idx}.zarr"))
+    list_ds_raft.append(xr.open_zarr(test_event_dir / f"raft_test_event_{idx}.zarr"))
+    for key in ["lucas_kanade", "raft"]:
+        skills_dir = (extrapolation_skills_dir / key)
+        cont.append(xr.open_dataset(skills_dir / "deterministic_continuous_global_skill.nc"))
+        for thr in thresholds:
+            cat[thr].append(xr.open_dataset(skills_dir / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
+            for scale in spatial_scales:
+                spatial[thr].append(xr.open_dataset(skills_dir / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
+
+
+
+
+ds_lk = xr.concat(list_ds_lk, dim="forecast_reference_time")
+ds_lk = xr_sel_coords_between(ds_lk, **boundaries)
+ds_lk = ds_lk.rename({"lucas_kanade": "feature"})[["feature"]]
+ds_raft = xr.concat(list_ds_raft, dim="forecast_reference_time")
+ds_raft = xr_sel_coords_between(ds_raft, **boundaries)
+ds_raft = ds_raft.rename({"raft": "feature"})[["feature"]]
+
+forecasts = [ds_lk, ds_raft]
+legend_labels = ["Lucas-Kanade", "RAFT"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of optical flows with extrapolation",
+                          "extrapolation_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_extrapolation", 
+                          geodata=METADATA_CH)

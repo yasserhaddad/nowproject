@@ -9,7 +9,7 @@ import matplotlib.colors
 
 from PIL import Image
 from typing import List, Tuple, Union
-from nowproject.verification.plot_precip import plot_single_precip
+from nowproject.visualization.plot_precip import plot_single_precip
 from pysteps.visualization.utils import proj4_to_cartopy
 from pysteps.visualization.precipfields import get_colormap
 from matplotlib import colors
@@ -590,3 +590,93 @@ def plot_forecast_comparison(figs_dir: pathlib.Path,
             duration=1 / fps * 1000,  # ms
             loop=False,
         )
+
+
+def plot_forecasts_grid(figs_dir: pathlib.Path,
+                        list_ds_forecasts: List[xr.Dataset],
+                        ds_obs: xr.Dataset,
+                        legend_labels: List[str],
+                        leadtimes: np.ndarray,
+                        geodata: dict = None,
+                        variable: str = "feature",
+                        aspect_cbar: int = 40,
+                        save_gif: bool = True,
+                        fps: int = 4,
+                        suptitle_prefix: str = "Forecast comparison",
+                        filename_prefix: str = ""
+                    ):
+    figs_dir.mkdir(exist_ok=True)
+
+    forecast_reference_time = str(list_ds_forecasts[0]['forecast_reference_time'].values.astype('datetime64[s]'))
+    # Load data into memory
+    list_ds_forecasts = [rescale_spatial_axes(ds_forecast.load(), scale_factor=1000) for ds_forecast in list_ds_forecasts]
+    list_ds_forecasts = [ds_forecast.sel(leadtime=leadtimes) for ds_forecast in list_ds_forecasts]
+    # Retrieve valid time 
+    valid_time = list_ds_forecasts[0]['forecast_reference_time'].values + leadtimes
+    list_ds_forecasts = [ds_forecast.assign_coords({'time': ('leadtime', valid_time)})\
+                                    .swap_dims({'leadtime': 'time'}) for ds_forecast in list_ds_forecasts]
+
+    # Subset observations and load in memory
+    ds_obs = ds_obs.sel(time=list_ds_forecasts[0]['time'].values)
+    ds_obs = rescale_spatial_axes(ds_obs.load(), scale_factor=1000)
+    list_ds_forecasts = [ds_obs] + list_ds_forecasts
+    legend_labels = ["Observation"] + legend_labels
+
+    _, _, clevs, clevs_str = get_colormap("intensity", "mm/h", "pysteps")
+
+    # Retrieve common variables to plot 
+
+    fig, axs = plt.subplots(
+        len(list_ds_forecasts),
+        len(leadtimes),
+        figsize=(20, 5*len(list_ds_forecasts)),
+        subplot_kw={'projection': proj4_to_cartopy(geodata["projection"])}
+    )
+    
+    suptitle = "{}\nForecast reference time: {}".format(
+        suptitle_prefix,
+        forecast_reference_time
+    )
+
+    fig.suptitle(suptitle, fontsize="xx-large", y=0.95)
+
+    for i in range(len(list_ds_forecasts)):
+        for j, leadtime in enumerate(leadtimes):
+            tmp = list_ds_forecasts[i][variable].isel(time=j)
+            _, p = plot_single_precip(tmp,
+                                   ax=axs[i, j], 
+                                   geodata=geodata, 
+                                   title=None, 
+                                   colorbar=False)
+            
+            if i == 0:
+                axs[i, j].set_title(leadtime.astype("timedelta64[m]"), fontsize="x-large", pad=10.0)
+            else:
+                axs[i, j].set_title(None)
+            axs[i, j].outline_patch.set_linewidth(1)
+
+            if j == 0:
+                axs[i, j].get_yaxis().set_visible(True)
+                axs[i, j].set_yticks([])
+                axs[i, j].set_yticklabels([])
+                axs[i, j].set_ylabel(legend_labels[i], rotation=0, fontsize="x-large", labelpad=85.0)
+    
+    fig.subplots_adjust(wspace=0.2, hspace=0.1)
+        
+    cbar = fig.colorbar(p, ax=axs.flatten(), 
+                        ticks=clevs,
+                        spacing="uniform",
+                        orientation="horizontal", 
+                        extend = 'both',
+                        anchor=(0.3, 1.0),
+                        pad=0.05,
+                        fraction=0.05,
+                        aspect=aspect_cbar)       
+    cbar.set_label("Precipitation intensity (mm/h)")
+    cbar.ax.xaxis.set_label_position('top')
+    cbar.ax.set_xticklabels(clevs_str)
+
+    filepath = figs_dir / f"{filename_prefix}{forecast_reference_time}.png"
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+
+    return fig

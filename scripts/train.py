@@ -40,8 +40,6 @@ from nowproject.config import (
 
 from nowproject.verification.verification import verification_routine
 
-# from xverif import xverif
-
 # Project specific functions
 import nowproject.architectures as dl_architectures
 from nowproject.loss import (
@@ -53,24 +51,15 @@ from nowproject.loss import (
 )
 from nowproject.training import AutoregressiveTraining
 from nowproject.predictions import AutoregressivePredictions
-from nowproject.verification.plot_skills import ( 
+from nowproject.visualization.plot_skills import ( 
     plot_averaged_skill,
     plot_averaged_skills, 
     plot_skills_distribution
 )
-from nowproject.verification.plot_map import (
+from nowproject.visualization.plot_map import (
     plot_forecast_comparison
 )
 
-from nowproject.scalers import (
-    Scaler,
-    log_normalize_inverse_transform,
-    log_normalize_transform,
-    normalize_transform,
-    normalize_inverse_transform,
-    bin_transform,
-    bin_inverse_transform
-)
 from nowproject.data.scalers_modules import (
     log_normalize_scaler,
     normalize_scaler,
