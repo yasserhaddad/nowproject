@@ -600,11 +600,36 @@ def plot_forecasts_grid(figs_dir: pathlib.Path,
                         geodata: dict = None,
                         variable: str = "feature",
                         aspect_cbar: int = 40,
-                        save_gif: bool = True,
-                        fps: int = 4,
                         suptitle_prefix: str = "Forecast comparison",
                         filename_prefix: str = ""
                     ):
+    """Plots a grid of forecasts at indicated leadtimes to compare them to
+    the observation.
+
+    Parameters
+    ----------
+    figs_dir : pathlib.Path
+        Path to folder where to save the plot
+    list_ds_forecasts : List[xr.Dataset]
+        List of datasets containing forecasts
+    ds_obs : xr.Dataset
+        Dataset containing the observations
+    legend_labels : List[str]
+        Labels of the observations and forecasts to show
+        next to their corresponding plots
+    leadtimes : np.ndarray
+        Array of leadtimes to plot
+    geodata : dict, optional
+        Metadata to plot the basemap, by default None
+    variable : str, optional
+        Common variable to plot, by default "feature"
+    aspect_cbar : int, optional
+        Ratio of long to short dimensions in the colorbar, by default 40
+    suptitle_prefix : str, optional
+        Prefix to add to the suptitle over all the plots, by default "Forecast comparison"
+    filename_prefix : str, optional
+        Prefix to add to the filename, by default ""
+    """
     figs_dir.mkdir(exist_ok=True)
 
     forecast_reference_time = str(list_ds_forecasts[0]['forecast_reference_time'].values.astype('datetime64[s]'))
@@ -678,5 +703,3 @@ def plot_forecasts_grid(figs_dir: pathlib.Path,
 
     filepath = figs_dir / f"{filename_prefix}{forecast_reference_time}.png"
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
-
-    return fig

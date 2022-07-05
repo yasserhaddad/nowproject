@@ -2,6 +2,7 @@
 # %autoreload 2
 
 from pathlib import Path
+from typing import List
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -26,8 +27,9 @@ sns.set_theme()
 thresholds = [0.1, 5, 10]
 spatial_scales = [5]
 
+# Functions to load models skills and forecasts and show results
 
-def load_models_skills_and_forecasts(models, models_dir):
+def load_models_skills_and_forecasts(models: List[str], models_dir: Path):
     cont = []
     cat = {thr: [] for thr in thresholds}
     spatial = {thr: [] for thr in thresholds}
@@ -47,7 +49,7 @@ def load_models_skills_and_forecasts(models, models_dir):
     return cont, cat, spatial, forecasts
 
 
-def display_results(list_ds_skills, skills, labels_rows):
+def display_results(list_ds_skills: List[xr.Dataset], skills: List[str], labels_rows: List[str]):
     table = []
     leadtimes = list_ds_skills[0].leadtime.values
     leadtimes = [leadtimes[i] for i in [0, int(len(leadtimes)/2-1), int(len(leadtimes)-1)]]
@@ -384,28 +386,12 @@ plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels,
                           geodata=METADATA_CH)
 
 # Compare MSE non-weighted vs weighted
-cont = []
-cat = {thr: [] for thr in thresholds}
-spatial = {thr: [] for thr in thresholds}
-
-
-forecasts = []
 models = [
     "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
     "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-15epochs-1year",
     "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c4-15epochs-1year"
 ]
-
-for model in models:
-    experiment = models_dir / model / "model_skills"
-    cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
-    for thr in thresholds:
-        cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
-        for scale in spatial_scales:
-            spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
-
-    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
-    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
 
 legend_labels = ["No Weighting", "Weighedtb5c1", "Weighedtb5c4"]
 
@@ -414,6 +400,52 @@ plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels,
                           "Forecast comparison of model trained with non-weighted vs weighted MSE",
                           "weighted_mse_", cont, cat, spatial, 
                           figs_dir / "results" / "skills_weighted_mse", 
+                          geodata=METADATA_CH)
+
+
+# Adding more training data
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-2years"
+]
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
+legend_labels = ["1 year\n(2018)", "2 years\n(2018-2019)"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of model trained with 1 year vs 2 years of data",
+                          "more_training_data_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_more_data", 
+                          geodata=METADATA_CH)
+
+# No static feature vs DEM
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-DEM-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year"
+]
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
+legend_labels = ["No static feature", "DEM"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of model trained with no static feature and with DEM",
+                          "static_features_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_static_features", 
+                          geodata=METADATA_CH)
+
+# Plot best models
+models = [
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c4-15epochs-1year"
+]
+cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
+legend_labels = ["UNet3D-ELU\nMSEMasked\nNonWeighted", "UNet3D-ELU\nMSEMasked\nWeightedb5c4"]
+
+plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
+                          results_figs_dir / "comparison_forecasts", 
+                          "Forecast comparison of the best models",
+                          "best_models_", cont, cat, spatial, 
+                          figs_dir / "results" / "skills_best_models", 
                           geodata=METADATA_CH)
 
 
@@ -493,81 +525,6 @@ plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels,
                           "benchmarks_vs_best_", cont, cat, spatial, 
                           figs_dir / "results" / "skills_benchmarks_vs_best", 
                           geodata=METADATA_CH)
-
-
-
-
-# Adding more training data
-thresholds = [0.1, 5, 10]
-spatial_scales = [5]
-
-cont = []
-cat = {thr: [] for thr in thresholds}
-spatial = {thr: [] for thr in thresholds}
-
-
-forecasts = []
-models = [
-    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
-    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-2years"
-]
-
-for model in models:
-    experiment = models_dir / model / "model_skills"
-    cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
-    for thr in thresholds:
-        cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
-        for scale in spatial_scales:
-            spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
-
-    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
-    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
-
-legend_labels = ["1 year\n(2018)", "2 years\n(2018-2019)"]
-
-plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
-                          results_figs_dir / "comparison_forecasts", 
-                          "Forecast comparison of model trained with 1 year vs 2 years of data",
-                          "more_training_data_", cont, cat, spatial, 
-                          figs_dir / "results" / "skills_more_data", 
-                          geodata=METADATA_CH)
-
-# No static feature vs DEM
-
-thresholds = [0.1, 5, 10]
-spatial_scales = [5]
-
-cont = []
-cat = {thr: [] for thr in thresholds}
-spatial = {thr: [] for thr in thresholds}
-
-
-forecasts = []
-models = [
-    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
-    "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-DEM-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year"
-]
-
-for model in models:
-    experiment = models_dir / model / "model_skills"
-    cont.append(xr.open_dataset(experiment / "deterministic_continuous_global_skill.nc"))
-    for thr in thresholds:
-        cat[thr].append(xr.open_dataset(experiment / f"deterministic_categorical_global_skill_thr{thr}_mean.nc"))
-        for scale in spatial_scales:
-            spatial[thr].append(xr.open_dataset(experiment / f"deterministic_spatial_global_skill_thr{thr}_scale{scale}.nc"))
-
-    forecast_zarr_fpath = models_dir / model / "model_predictions" / "forecast_chunked" / "test_forecasts.zarr"
-    forecasts.append(xr.open_zarr(forecast_zarr_fpath))
-
-legend_labels = ["No static feature", "DEM"]
-
-plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
-                          results_figs_dir / "comparison_forecasts", 
-                          "Forecast comparison of model trained with no static feature and with DEM",
-                          "static_features_", cont, cat, spatial, 
-                          figs_dir / "results" / "skills_static_features", 
-                          geodata=METADATA_CH)
-
 
 
 # Optical flow comparison

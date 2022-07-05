@@ -16,7 +16,7 @@ import numpy as np
 ### Custom loss utils ####
 ##########################
 def reshape_tensors_4_loss(Y_pred, Y_obs, dim_info_dynamic, channels_first=False):
-    """Reshape tensors for loss computation as currently expexted by WeightedMSELoss ."""
+    """Reshape tensors for loss computation"""
     # Retrieve tensor dimension names
     ordered_dynamic_variables_ = [
         k for k, v in sorted(dim_info_dynamic.items(), key=lambda item: item[1])
