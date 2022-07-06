@@ -22,6 +22,7 @@ from nowproject.models.layers_3d import (
     DecoderMultiScale, 
     DoubleConv, 
     ExtResNetBlock, 
+    ResNetBlockDoubleConv,
     NoDownsampling, 
     ResNetBlock, 
     create_encoders_multiscale
@@ -101,7 +102,7 @@ class MultiScaleResidualConv(nn.Module):
                  tensor_info: dict, 
                  f_maps: int = 64, 
                  layer_order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), 
-                 basic_module: nn.Module = ResNetBlock,
+                 basic_module: nn.Module = ResNetBlockDoubleConv,
                  num_groups: int = 8, 
                  num_levels: int = 3, 
                  conv_padding: int = 1, 
@@ -123,7 +124,7 @@ class MultiScaleResidualConv(nn.Module):
         layer_order : Union[List[str], Tuple[str]], optional
             Order of the layers in the basic convolutional block, by default ("conv", "relu")
         basic_module : nn.Module, optional
-            Basic model for the encoder/decoder, by default ExtResNetBlock
+            Basic model for the encoder/decoder, by default ResNetBlockDoubleConv
         num_groups : int, optional
             Number of groups to divide the channels into for the GroupNorm, by default 8
         num_levels : int, optional
