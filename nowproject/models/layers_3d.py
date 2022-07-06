@@ -1,5 +1,5 @@
 from functools import partial
-from turtle import forward
+from typing import List, Tuple, Union
 
 import torch
 from torch import nn
@@ -7,7 +7,43 @@ import torch.nn.functional as F
 
 # https://github.com/wolny/pytorch-3dunet/blob/master/pytorch3dunet/unet3d/buildingblocks.py
 
-def create_conv_3d(in_channels, out_channels, kernel_size, order, num_groups, padding):
+def create_conv_3d(in_channels: int, out_channels: int, kernel_size: Union[int, Tuple[int, ...]], 
+                   order: Union[List[str], Tuple[str, ...]], num_groups: int, padding: int) -> List[nn.Module]:
+    """Creates a convolutional block composed of the specified modules. The available options are : Conv3D,
+    GroupNorm, BatchNorm and activation functions (ReLU, LeakyReLU and ELU).
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels
+    out_channels : int
+        Number of output channels
+    kernel_size : Union[int, Tuple[int, ...]]
+        Kernel size of the convolution
+    order : Union[List[str], Tuple[str, ...]]
+        Order of the layers in the convolutional block
+    num_groups : int
+        Number of groups to divide the channels into for
+        the GroupNorm
+    padding : int
+        Padding of the convolution
+
+    Returns
+    -------
+    List[nn.Module]
+        List of the different modules composing the convolutional block
+
+    Raises
+    ------
+    TypeError
+        Order must be a list or a tuple
+    ValueError
+        Order must contain "conv"
+    ValueError
+        Non-linearity cannot be the first operation in the layer
+    ValueError
+        Number of channels shuld be divisible by num_groups
+    """
     if type(order) not in [list, tuple]:
         raise TypeError("'order' variable must be a list") 
     
@@ -60,7 +96,28 @@ def create_conv_3d(in_channels, out_channels, kernel_size, order, num_groups, pa
 
 
 class SingleConv(nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size=3, order=("conv", "relu"), num_groups=8, padding=1):
+    """Creates a single convolutional block."""
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), num_groups: int = 8, 
+                 padding: int = 1):
+        """Initializes the Single Conv.
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for
+            the GroupNorm, by default 8
+        padding : int, optional
+            Padding of the convolution, by default 1
+        """
         super().__init__()
 
         for name, module in create_conv_3d(in_channels, out_channels, kernel_size, order, num_groups, padding=padding):
@@ -68,7 +125,33 @@ class SingleConv(nn.Sequential):
 
 
 class DoubleConv(nn.Sequential):
-    def __init__(self, in_channels, out_channels, encoder, kernel_size=3, order=("conv", "relu"), num_groups=8, padding=1):
+    """Creates a series of two convolutional blocks, either for encoding or decoding."""
+    def __init__(self, in_channels: int, out_channels: int, encoder: bool, kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), num_groups: int = 8, 
+                 padding: int = 1):
+        """Initiliazes the DoubleConv. This series of two convolutional blocks
+        can be used either in the encoding path, in which case the number of channels
+        increase, or in the decoding path, in which case the number of channels decrease.
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        encoder : bool
+            Whether the series of convolutional blocks is
+            in the encoding path or not
+        kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for
+            the GroupNorm, by default 8
+        padding : int, optional
+            Padding of the convolution, by default 1
+        """
         super().__init__()
         if encoder:
             # we're in the encoder path
@@ -94,7 +177,32 @@ class DoubleConv(nn.Sequential):
 
 
 class ResNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, order=("conv", "relu"), num_groups=8, rezero=True, **kwargs):
+    """
+    Basic residual UNet block with no activation function after adding the increment and after the last layer.
+    The SingleConv takes care of increasing/decreasing the number of channels and also ensures that the number
+    of output channels is compatible with the residual block that follows.
+    """
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), num_groups: int = 8, 
+                 rezero: bool = True, **kwargs):
+        """Initializes the ResNetBlock.
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for
+            the GroupNorm, by default 8
+        rezero : bool, optional
+            Whether to apply the ReZero trick, by default True
+        """
         super().__init__()
         if type(order) != list:
             order = list(order)
@@ -185,12 +293,26 @@ class ExtResNetBlock(nn.Module):
     Basic UNet block consisting of a SingleConv followed by the residual block.
     The SingleConv takes care of increasing/decreasing the number of channels and also ensures that the number
     of output channels is compatible with the residual block that follows.
-    This block can be used instead of standard DoubleConv in the Encoder module.
-    Motivated by: https://arxiv.org/pdf/1706.00120.pdf
-    Notice we use ELU instead of ReLU (order='cge') and put non-linearity after the groupnorm.
     """
 
-    def __init__(self, in_channels, out_channels, kernel_size=3, order=("conv", "relu"), num_groups=8, **kwargs):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), num_groups: int = 8, **kwargs):
+        """Initializes the ExResNetBlock.
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for
+            the GroupNorm, by default 8
+        """
         super().__init__()
         if type(order) != list:
             order = list(order)
@@ -231,28 +353,38 @@ class ExtResNetBlock(nn.Module):
 class Encoder(nn.Module):
     """
     A single module from the encoder path consisting of the optional max
-    pooling layer (one may specify the MaxPool kernel_size to be different
-    than the standard (2,2,2), e.g. if the volumetric data is anisotropic
-    (make sure to use complementary scale_factor in the decoder path) followed by
-    a DoubleConv module.
-    Args:
-        in_channels (int): number of input channels
-        out_channels (int): number of output channels
-        conv_kernel_size (int or tuple): size of the convolving kernel
-        apply_pooling (bool): if True use MaxPool3d before DoubleConv
-        pool_kernel_size (int or tuple): the size of the window
-        pool_type (str): pooling layer: 'max' or 'avg'
-        basic_module(nn.Module): either ResNetBlock or DoubleConv
-        conv_layer_order (string): determines the order of layers
-            in `DoubleConv` module. See `DoubleConv` for more info.
-        num_groups (int): number of groups for the GroupNorm
-        padding (int or tuple): add zero-padding added to all three sides of the input
+    pooling layer followed by a DoubleConv module.
     """
+    def __init__(self, in_channels: int, out_channels: int, conv_kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 apply_pooling: bool = True, pool_kernel_size: Union[int, Tuple[int, ...]] = 2, 
+                 pool_type: str = 'max', basic_module: nn.Module = DoubleConv, 
+                 conv_layer_order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), 
+                 num_groups: int = 8, padding: int = 1):
+        """Initialize the Encoder.
 
-    def __init__(self, in_channels, out_channels, conv_kernel_size=3, apply_pooling=True,
-                 pool_kernel_size=2, pool_type='max', basic_module=DoubleConv, 
-                 conv_layer_order=("conv", "relu"),
-                 num_groups=8, padding=1):
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        conv_kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        apply_pooling : bool, optional
+            Whether to apply pooling before convolution, by default True
+        pool_kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the pooling, by default 2
+        pool_type : str, optional
+            Type of pooling layer to use, by default 'max'
+        basic_module : nn.Module, optional
+            Basic model for the encoder/decoder, by default DoubleConv
+        conv_layer_order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the basic convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for the GroupNorm, by default 8
+        padding : int, optional
+            Padding of the convolution, by default 1
+        """
         super().__init__()
         assert pool_type in ['max', 'avg']
         if apply_pooling:
@@ -279,25 +411,39 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     """
-    A single module for decoder path consisting of the upsampling layer
-    (either learned ConvTranspose3d or nearest neighbor interpolation) followed by a basic module (DoubleConv or ExtResNetBlock).
-    Args:
-        in_channels (int): number of input channels
-        out_channels (int): number of output channels
-        conv_kernel_size (int or tuple): size of the convolving kernel
-        scale_factor (tuple): used as the multiplier for the image H/W/D in
-            case of nn.Upsample or as stride in case of ConvTranspose3d, must reverse the MaxPool3d operation
-            from the corresponding encoder
-        basic_module(nn.Module): either ResNetBlock or DoubleConv
-        conv_layer_order (string): determines the order of layers
-            in `DoubleConv` module. See `DoubleConv` for more info.
-        num_groups (int): number of groups for the GroupNorm
-        padding (int or tuple): add zero-padding added to all three sides of the input
-        upsample (boole): should the input be upsampled
+    A single module for decoder path consisting of the upsampling layer (either learned 
+    ConvTranspose3d or nearest neighbor interpolation) followed by a basic module.
     """
+    def __init__(self, in_channels: int, out_channels: int, conv_kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 scale_factor: Union[int, Tuple[int, ...]] = (2, 2, 2), basic_module: nn.Module = DoubleConv, 
+                 conv_layer_order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), num_groups: int = 8, 
+                 mode: str = 'nearest', padding: int = 1, upsample: bool = True):
+        """Initialize the Decoder.
 
-    def __init__(self, in_channels, out_channels, conv_kernel_size=3, scale_factor=(2, 2, 2), basic_module=DoubleConv,
-                 conv_layer_order=("conv", "relu"), num_groups=8, mode='nearest', padding=1, upsample=True):
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        conv_kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        scale_factor : Union[int, Tuple[int, ...]], optional
+            Used as the multiplier for the image H/W/D, must reverse the pooling from
+            the corresponding encoder, by default (2, 2, 2)
+        basic_module : nn.Module, optional
+            Basic module for the decoder, by default DoubleConv
+        conv_layer_order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the basic convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for the GroupNorm, by default 8
+        mode : str, optional
+            Interpolation upsampling mode, by default 'nearest'
+        padding : int, optional
+            Padding of the convolution, by default 1
+        upsample : bool, optional
+            Whether the input should be upsampled, by default True
+        """
         super().__init__()
 
         if upsample:
@@ -341,9 +487,39 @@ class Decoder(nn.Module):
             return encoder_features + x
 
 
-def create_encoders(in_channels, f_maps, basic_module, conv_kernel_size, conv_padding, layer_order, num_groups,
-                    pool_kernel_size, pool_type="max"):
-    # create encoder path consisting of Encoder modules. Depth of the encoder is equal to `len(f_maps)`
+def create_encoders(in_channels: int, f_maps: List[int], basic_module: nn.Module, 
+                    conv_kernel_size: Union[int, Tuple[int, ...]], conv_padding: int, 
+                    layer_order: Union[List[str], Tuple[str, ...]], num_groups: int,
+                    pool_kernel_size: Union[int, Tuple[int, ...]], 
+                    pool_type: str = "max") -> nn.ModuleList:
+    """Creates a list of encoders of depth len(f_maps).
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels
+    f_maps : List[int]
+        Number of feature maps
+    basic_module : nn.Module
+        Basic module for the encoder
+    conv_kernel_size : Union[int, Tuple[int, ...]]
+        Kernel size of the convolution
+    conv_padding : int
+        Padding of the convolution
+    layer_order : Union[List[str], Tuple[str, ...]]
+        Order of the layers in the basic convolutional block
+    num_groups : int
+        Number of groups to divide the channels into for the GroupNorm
+    pool_kernel_size : Union[int, Tuple[int, ...]]
+        Kernel size of the pooling
+    pool_type : str, optional
+        Type of pooling layer to use, by default "max"
+
+    Returns
+    -------
+    nn.ModuleList
+        List of encoders
+    """
     encoders = []
     for i, out_feature_num in enumerate(f_maps):
         if i == 0:
@@ -369,7 +545,36 @@ def create_encoders(in_channels, f_maps, basic_module, conv_kernel_size, conv_pa
     return nn.ModuleList(encoders)
 
 
-def create_decoders(f_maps, basic_module, conv_kernel_size, conv_padding, layer_order, num_groups, upsample, scale_factor):
+def create_decoders(f_maps: List[int], basic_module: nn.Module, conv_kernel_size: Union[int, Tuple[int, ...]], 
+                    conv_padding: int, layer_order: Union[List[str], Tuple[str, ...]], num_groups: int, 
+                    upsample: bool, scale_factor: Union[int, Tuple[int, ...]]) ->  nn.ModuleList:
+    """Creates a list of decoders of length len(f_maps) - 1.
+
+    Parameters
+    ----------
+    f_maps : List[int]
+        Number of feature maps
+    basic_module : nn.Module
+        Basic module for the decoder
+    conv_kernel_size : Union[int, Tuple[int, ...]]
+        Kernel size of the convolution
+    conv_padding : int
+        Padding of the convolution
+    layer_order : Union[List[str], Tuple[str, ...]]
+        Order of the layers in the basic convolutional block
+    num_groups : int
+        Number of groups to divide the channels into for the GroupNorm
+    upsample : bool
+        Whether the input should be upsampled
+    scale_factor : Union[int, Tuple[int, ...]]
+        Used as the multiplier for the image H/W/D, must reverse the pooling from
+        the corresponding encoder
+
+    Returns
+    -------
+    nn.ModuleList
+        List of decoders
+    """
     # create decoder path consisting of the Decoder modules. The length of the decoder list is equal to `len(f_maps) - 1`
     decoders = []
     reversed_f_maps = list(reversed(f_maps))
@@ -402,8 +607,40 @@ def create_decoders(f_maps, basic_module, conv_kernel_size, conv_padding, layer_
 
 
 class DecoderMultiScale(nn.Module):
-    def __init__(self, in_channels, out_channels, conv_kernel_size=3, scale_factor=(2, 2, 2), basic_module=DoubleConv,
-                 conv_layer_order=("conv", "relu"), num_groups=8, mode='nearest', padding=1, upsample=True):
+    """
+    A single module for decoder path for MultiScaleResConv consisting of the upsampling layer (either learned 
+    ConvTranspose3d or nearest neighbor interpolation) followed by a basic module.
+    """
+    def __init__(self, in_channels: int, out_channels: int, conv_kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 scale_factor: Union[int, Tuple[int, ...]] = (2, 2, 2), basic_module: nn.Module = DoubleConv,
+                 conv_layer_order: Union[List[str], Tuple[str, ...]] = ("conv", "relu"), num_groups: int = 8, 
+                 mode: str = 'nearest', padding: int = 1, upsample: bool = True):
+        """Initialize the DecoderMultiScale.
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        conv_kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        scale_factor : Union[int, Tuple[int, ...]], optional
+            Used as the multiplier for the image H/W/D, must reverse the pooling from
+            the corresponding encoder, by default (2, 2, 2)
+        basic_module : nn.Module, optional
+            Basic module for the decoder, by default DoubleConv
+        conv_layer_order : Union[List[str], Tuple[str, ...]], optional
+            Order of the layers in the basic convolutional block, by default ("conv", "relu")
+        num_groups : int, optional
+            Number of groups to divide the channels into for the GroupNorm, by default 8
+        mode : str, optional
+            Interpolation upsampling mode, by default 'nearest'
+        padding : int, optional
+            Padding of the convolution, by default 1
+        upsample : bool, optional
+            Whether the input should be upsampled, by default True
+        """
         super().__init__()
 
         if upsample:
@@ -433,7 +670,42 @@ class DecoderMultiScale(nn.Module):
         x = self.basic_module(x)
         return x
 
-def create_encoders_multiscale(in_channels, f_maps, basic_module, conv_kernel_size, conv_padding, layer_order, num_groups, upsample_last=False):
+
+def create_encoders_multiscale(in_channels: int, f_maps: List[int], basic_module: nn.Module, 
+                               conv_kernel_size: Union[int, Tuple[int, ...]], 
+                               conv_padding: int, layer_order: Union[List[str], Tuple[str]], 
+                               num_groups: int, upsample_last: bool = False) -> nn.ModuleList:
+    """Creates a list of encoders for MutliScaleResConv. It starts with a list of length len(f_maps) 
+    encoders that increases the number of channels and then it is followed by a list of length
+    len(f_maps) - 2 or len(f_maps) - 1 that decreases the number of channels. 
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels
+    f_maps : List[int]
+        Number of feature maps
+    basic_module : nn.Module
+        Basic module for the encoder
+    conv_kernel_size : Union[int, Tuple[int, ...]]
+        Kernel size of the convolution
+    conv_padding : int
+        Padding of the convolution
+    layer_order : Union[List[str], Tuple[str]]
+        Order of the layers in the basic convolutional block
+    num_groups : int
+        Number of groups to divide the channels into for the GroupNorm
+    upsample_last : bool, optional
+        Whether the output of the last encoder will be upsampled after 
+        encoding. If it is not, the list of encoders that decrease the 
+        number of channels will have a length of len(f_maps) - 1,
+        otherwise len(f_maps) - 2, by default False
+
+    Returns
+    -------
+    nn.ModuleList
+        List of encoders
+    """
     encoders_in = []
     encoders_out = []
     for i, out_feature_num in enumerate(f_maps):
@@ -466,8 +738,9 @@ def create_encoders_multiscale(in_channels, f_maps, basic_module, conv_kernel_si
 
 class AbstractUpsampling(nn.Module):
     """
-    Abstract class for upsampling. A given implementation should upsample a given 5D input tensor using either
-    interpolation or learned transposed convolution.
+    Abstract class for upsampling. A given implementation should upsample a 
+    given 5D input tensor using either interpolation or learned 
+    transposed convolution.
     """
 
     def __init__(self, upsample):
@@ -490,13 +763,17 @@ class AbstractUpsampling(nn.Module):
 
 class InterpolateUpsampling(AbstractUpsampling):
     """
-    Args:
-        mode (str): algorithm used for upsampling:
-            'nearest' | 'linear' | 'bilinear' | 'trilinear' | 'area'. Default: 'nearest'
-            used only if transposed_conv is False
+    Upsamples input using interpolation.
     """
-
     def __init__(self, mode='nearest'):
+        """Initialize InteropolateSampling.
+
+        Parameters
+        ----------
+        mode : str, optional
+            Mode of the interpolation. Options are 'nearest' | 'linear' | 
+            'bilinear' | 'trilinear' | 'area', by default 'nearest'
+        """
         upsample = partial(self._interpolate, mode=mode)
         super().__init__(upsample)
 
@@ -517,10 +794,24 @@ class TransposeConvUpsampling(AbstractUpsampling):
             used only if transposed_conv is True
     """
 
-    def __init__(self, in_channels=None, out_channels=None, kernel_size=3, scale_factor=(2, 2, 2)):
-        # make sure that the output size reverses the MaxPool3d from the corresponding encoder
-        upsample = nn.ConvTranspose3d(in_channels, out_channels, kernel_size=kernel_size, stride=scale_factor,
-                                      padding=1)
+    def __init__(self, in_channels: int = None, out_channels: int = None, 
+                 kernel_size: Union[int, Tuple[int, ...]] = 3, 
+                 scale_factor: Union[int, Tuple[int, ...]] = (2, 2, 2)):
+        """Initialize the TransposeConvUpsampling.
+
+        Parameters
+        ----------
+        in_channels : int, optional
+            Number of input channels, by default None
+        out_channels : int, optional
+            Number of output channels, by default None
+        kernel_size : Union[int, Tuple[int, ...]], optional
+            Kernel size of the convolution, by default 3
+        scale_factor : Union[int, Tuple[int, ...]], optional
+            Stride of the convolution, by default (2, 2, 2)
+        """
+        upsample = nn.ConvTranspose3d(in_channels, out_channels, kernel_size=kernel_size, 
+                                      stride=scale_factor, padding=1)
 
         super().__init__(upsample)
 

@@ -6,11 +6,17 @@ Created on Tue Mar 15 13:15:23 2022
 @author: ghiggi
 """
 import os
+import pathlib
+from typing import Callable, List, Union
 import torch
 import time
 import pickle
 import dask
+import xarray as xr
+
 import torch
+from torch import nn
+from torch import optim
 
 from xforecasting.dataloader_autoregressive import (
     AutoregressiveDataset,
@@ -33,68 +39,68 @@ from xforecasting.utils.torch import (
     check_ar_training_strategy,
     get_time_function,
 )
+from xforecasting import AR_Scheduler, EarlyStopping
 from xforecasting.training_info import AR_TrainingInfo
 from xforecasting.utils.xr import xr_is_aligned
 from xforecasting.utils.swag import bn_update_with_loader
 from xforecasting.training_autoregressive import timing_AR_Training
 
+from nowproject.scalers import Scaler
 from nowproject.dataloader import AutoregressivePatchLearningDataset, AutoregressivePatchLearningDataLoader
 
 def AutoregressiveTraining(
-    model,
-    model_fpath,
+    model: nn.Module,
+    model_fpath: pathlib.Path,
     # Loss settings
-    criterion,
-    reshape_tensors_4_loss,
-    channels_first,
-    ar_scheduler,
-    early_stopping,
-    optimizer,
+    criterion: nn.Module,
+    reshape_tensors_4_loss: Callable,
+    channels_first: bool,
+    ar_scheduler: AR_Scheduler,
+    early_stopping: EarlyStopping,
+    optimizer: optim.Optimizer,
     # Data
-    training_data_dynamic,
-    training_data_patches=None,
-    training_data_bc=None,
-    data_static=None,
-    validation_data_dynamic=None,
-    validation_data_patches=None,
-    validation_data_bc=None,
-    bc_generator=None,
-    scaler=None,
+    training_data_dynamic: Union[xr.DataArray, xr.Dataset],
+    training_data_patches: Union[xr.DataArray, xr.Dataset] = None,
+    training_data_bc: Union[xr.DataArray, xr.Dataset] = None,
+    data_static: Union[xr.DataArray, xr.Dataset] = None,
+    validation_data_dynamic: Union[xr.DataArray, xr.Dataset] = None,
+    validation_data_patches: Union[xr.DataArray, xr.Dataset] = None,
+    validation_data_bc: Union[xr.DataArray, xr.Dataset] = None,
+    bc_generator: Callable = None,
+    scaler: Scaler = None,
     # AR_batching_function
-    ar_batch_fun=get_aligned_ar_batch,
+    ar_batch_fun: Callable = get_aligned_ar_batch,
     # Dataloader options
-    prefetch_in_gpu=False,
-    prefetch_factor=2,
-    drop_last_batch=True,
-    shuffle=True,
-    shuffle_seed=69,
-    num_workers=0,
-    pin_memory=False,
-    asyncronous_gpu_transfer=True,
+    prefetch_in_gpu: bool = False,
+    prefetch_factor: int = 2,
+    drop_last_batch: bool = True,
+    shuffle: bool = True,
+    shuffle_seed: int = 69,
+    num_workers: int = 0,
+    pin_memory: bool = False,
+    asyncronous_gpu_transfer: bool = True,
     # Autoregressive settings
-    input_k=[-3, -2, -1],
-    output_k=[0],
-    forecast_cycle=1,
-    ar_iterations=6,
-    stack_most_recent_prediction=True,
+    input_k: List[int] = [-3, -2, -1],
+    output_k: List[int] = [0],
+    forecast_cycle: int = 1,
+    ar_iterations: int = 6,
+    stack_most_recent_prediction: bool = True,
     # Training settings
-    ar_training_strategy="AR",
-    lr_scheduler=None,
-    training_batch_size=128,
-    validation_batch_size=128,
-    epochs=10,
-    scoring_interval=10,
-    save_model_each_epoch=False,
-    ar_training_info=None,
+    ar_training_strategy: str = "AR",
+    lr_scheduler: object = None,
+    training_batch_size: int = 128,
+    validation_batch_size: int = 128,
+    epochs: int = 10,
+    scoring_interval: int = 10,
+    save_model_each_epoch: bool = False,
+    ar_training_info: AR_TrainingInfo = None,
     # SWAG settings
-    swag=False,
+    swag: bool = False,
     swag_model=None,
-    swag_freq=10,
-    swa_start=8,
+    swag_freq: int = 10,
+    swa_start: int = 8,
     # GPU settings
-    device="cpu",
-    # Tensorboard
-    tensorboard_writer=None
+    device: Union[str, torch.device] = "cpu",
 ):
     """AutoregressiveTraining.
 
@@ -457,13 +463,6 @@ def AutoregressiveTraining(
                         ar_scheduler=ar_scheduler,
                         lr_scheduler=lr_scheduler,
                     )
-                
-                if tensorboard_writer:
-                    if batch_count % scoring_interval == 0:
-                        tensorboard_writer.add_scalar('training loss',
-                                                      training_total_loss,
-                                                      ar_training_info.ar_iterations
-                                                    )
                         
 
                 ##------------------------------------------------------------.

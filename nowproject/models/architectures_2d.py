@@ -12,13 +12,13 @@ from torch.nn import (
 )
 import torch.nn.functional as F
 
-from nowproject.dl_models.layers_2d import (
+from nowproject.models.layers_2d import (
     ConvBlock,
     ResBlock,
     Upsampling
 )
 
-from nowproject.utils.utils_models import (
+from nowproject.models.models_utils import (
     check_skip_connection,
     reshape_input_for_decoding,
     reshape_input_for_encoding

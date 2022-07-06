@@ -27,7 +27,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
@@ -65,32 +65,13 @@ from nowproject.utils.plot_skills import (
     plot_averaged_skills, 
     plot_skills_distribution
 )
-from nowproject.utils.plot_map import (
-    plot_forecast_comparison
-)
-from nowproject.data.data_config import METADATA_CH
+from nowproject.utils.scalers import RainScaler, RainBinScaler
+from nowproject.data.dataset.data_config import METADATA, BOTTOM_LEFT_COORDINATES
+from nowproject.data.data_utils import load_static_topo_data, prepare_data_dynamic, get_tensor_info_with_patches
 
-from nowproject.scalers import (
-    Scaler,
-    log_normalize_inverse_transform,
-    log_normalize_transform,
-    normalize_transform,
-    normalize_inverse_transform,
-    bin_transform,
-    bin_inverse_transform
-)
-from nowproject.utils.scalers_modules import (
-    log_normalize_scaler,
-    normalize_scaler,
-    bin_scaler
-)
-from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
-from nowproject.data.data_utils import (
-    load_static_topo_data, 
-    prepare_data_dynamic,
-    prepare_data_patches, 
-    get_tensor_info_with_patches
-)
+# %load_ext autoreload
+# %autoreload 2
+
 
 default_data_dir = "/ltenas3/0_Data/NowProject/"
 default_static_data_path = "/ltenas3/0_GIS/DEM Switzerland/srtm_Switzerland_EPSG21781.tif"

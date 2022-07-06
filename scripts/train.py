@@ -21,7 +21,7 @@ from xforecasting import (
     EarlyStopping,
 )
 
-from nowproject.utils.config import (
+from nowproject.config import (
     read_config_file,
     write_config_file,
     get_model_settings,
@@ -38,9 +38,7 @@ from nowproject.utils.config import (
     create_test_events_time_range
 )
 
-from nowproject.utils.verification import verification_routine
-
-# from xverif import xverif
+from nowproject.verification.verification import verification_routine
 
 # Project specific functions
 import nowproject.architectures as dl_architectures
@@ -53,31 +51,21 @@ from nowproject.loss import (
 )
 from nowproject.training import AutoregressiveTraining
 from nowproject.predictions import AutoregressivePredictions
-from nowproject.utils.plot_skills import ( 
+from nowproject.visualization.plot_skills import ( 
     plot_averaged_skill,
     plot_averaged_skills, 
     plot_skills_distribution
 )
-from nowproject.utils.plot_map import (
+from nowproject.visualization.plot_map import (
     plot_forecast_comparison
 )
-from nowproject.data.data_config import METADATA_CH
 
-from nowproject.scalers import (
-    Scaler,
-    log_normalize_inverse_transform,
-    log_normalize_transform,
-    normalize_transform,
-    normalize_inverse_transform,
-    bin_transform,
-    bin_inverse_transform
-)
-from nowproject.utils.scalers_modules import (
+from nowproject.data.scalers_modules import (
     log_normalize_scaler,
     normalize_scaler,
     bin_scaler
 )
-from nowproject.data.data_config import METADATA, BOTTOM_LEFT_COORDINATES
+from nowproject.data.dataset.data_config import METADATA, BOTTOM_LEFT_COORDINATES, METADATA_CH
 from nowproject.data.data_utils import (
     load_static_topo_data, 
     prepare_data_dynamic,
@@ -99,16 +87,14 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     training_settings = get_training_settings(cfg)
     dataloader_settings = get_dataloader_settings(cfg)
 
-    # model_settings["conv_type"] = "regular"
-
     ##------------------------------------------------------------------------.
     # Load Zarr Datasets
     boundaries = {"x": slice(485, 831), "y": slice(301, 75)}
     data_dynamic = prepare_data_dynamic(data_dir_path / "zarr" / "rzc_temporal_chunk.zarr", 
                                         boundaries=boundaries, 
                                         timestep=5)
-    # data_static = load_static_topo_data(static_data_path, data_dynamic)
-    data_static = None
+    data_static = load_static_topo_data(static_data_path, data_dynamic)
+    # data_static = None
 
     patch_size = 128
     data_patches = prepare_data_patches(data_dir_path / "rzc_cropped_patches_fixed.parquet",
@@ -131,10 +117,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     ## - Defining time split for training
     training_years = np.array(["2018-01-01T00:00", "2018-12-31T23:57:30"], dtype="M8[s]")
     validation_years = np.array(["2020-01-01T00:00", "2020-12-31T23:57:30"], dtype="M8[s]")
-    # training_years = np.array(["2018-01-01T00:00", "2018-06-30T23:57:30"], dtype="M8[s]")
-    # validation_years = np.array(["2021-01-01T00:00", "2021-01-31T23:57:30"], dtype="M8[s]")
-    # training_years = np.array(["2018-01-01T00:00", "2018-01-31T23:57:30"], dtype="M8[s]")
-    # validation_years = np.array(["2021-01-01T00:00", "2021-01-10T23:57:30"], dtype="M8[s]")
+
     test_events = create_test_events_time_range(test_events_path, freq="5min")
 
     # - Split data sets
@@ -205,13 +188,6 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
         )
     )
 
-    # _ = summarize_model(
-    #     model=model,
-    #     input_size=tuple(tensor_info["input_shape"]["train"][1:]),
-    #     batch_size=training_settings["training_batch_size"],
-    #     device=device,
-    # )
-
     # Generate the (new) model name and its directories
     if model_settings["model_name"] is not None:
         model_name = model_settings["model_name"]
@@ -223,7 +199,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
 
     model_dir = create_experiment_directories(
         exp_dir=exp_dir_path, model_name=model_name, 
-        suffix=f"5mins-Patches-LogNormalizeScaler-MSEMaskedWeightedb5c1-{training_settings['epochs']}epochs-1year", 
+        suffix=f"5mins-DEM-Patches-LogNormalizeScaler-MSEMasked-{training_settings['epochs']}epochs-1year", 
         force=force
     )  # force=True will delete existing directory
 
@@ -240,7 +216,7 @@ def main(cfg_path, data_dir_path, static_data_path, test_events_path,
     # criterion = WeightedMSELoss(reduction="mean_masked")
     # criterion = WeightedMSELoss(reduction="mean_masked", zero_value=1)
     criterion = WeightedMSELoss(reduction="mean_masked",
-                                weighted_truth=True, weights_params=(5, 1))
+                                weighted_truth=True, weights_params=(5, 4))
     # criterion = LogCoshLoss(masked=True, weighted_truth=True, weights_params=(5, 4))
     # criterion = FSSLoss(mask_size=3)
     # criterion = CombinedFSSLoss(mask_size=3, cutoffs=[0.5, 5.0, 10.0])
@@ -512,18 +488,10 @@ if __name__ == "__main__":
     default_data_dir = "/ltenas3/0_Data/NowProject/"
     default_static_data_path = "/ltenas3/0_GIS/DEM Switzerland/srtm_Switzerland_EPSG21781.tif"
     default_exp_dir = "/home/haddad/experiments/"
-    # default_config = "/home/haddad/nowproject/configs/UNet/AvgPool4-Conv3.json"
-    # default_config = "/home/haddad/nowproject/configs/UNet/MaxPool4-Conv3.json"
-    # default_config = "/home/haddad/nowproject/configs/EPDNet/AvgPool4-Conv3.json"
-    # default_config = "/home/haddad/nowproject/configs/resConv/conv128.json"
     # default_config = "/home/haddad/nowproject/configs/resConv/conv64.json"
-    # default_config = "/home/haddad/nowproject/configs/resConv/conv64_optical_flow.json"
-    # default_config = "/home/haddad/nowproject/configs/resConv/conv64_direct.json"
     # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3.json"
-    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-32.json"
-    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
-    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-GN-ELU.json"
-
+    default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"
+    # default_config = "/home/haddad/nowproject/configs/UNet3D/Residual-MaxPool2-Conv3-GN-ELU.json"
     default_test_events = "/home/haddad/nowproject/configs/subset_test_events.json"
 
     parser = argparse.ArgumentParser(

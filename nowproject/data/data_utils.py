@@ -1,13 +1,36 @@
 import copy
 import pathlib
+from typing import Union
 import pandas as pd
 import xarray as xr
 import numpy as np
 
 from topo_descriptors import topo, helpers
-from nowproject.data.data_config import BOTTOM_LEFT_COORDINATES
+from nowproject.data.dataset.data_config import BOTTOM_LEFT_COORDINATES
 
-def xr_sel_coords_between(data, **kwargs):
+def xr_sel_coords_between(data: Union[xr.Dataset, xr.DataArray], **kwargs):
+    """Select the right slice of data, depending on the parameters passed to the function.
+    The function expects the kwargs to be slice objects.
+
+    Parameters
+    ----------
+    data : Union[xr.Dataset, xr.DataArray]
+        xarray Dataset or DataArray to select a slice from
+
+    Returns
+    -------
+    Union[xr.Dataset, xr.DataArray]
+        Sliced Dataset or DataArray
+
+    Raises
+    ------
+    TypeError
+        Function expects slice objects
+    ValueError
+        Name of the parameter should be a dimension of the data
+    ValueError
+        Dimension of the data should be 1-dimensional
+    """
     for k, slc in kwargs.items():
         if not isinstance(slc, slice):
              raise TypeError("Expects slice objects.")
@@ -88,7 +111,7 @@ def prepare_data_patches(data_patches_path: pathlib.Path, patch_size: int, times
 
 
 def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset, 
-                          upsample: bool = True, upsample_factor: int = 13, 
+                          upsample: bool = True, upsample_factor: int = 13, rescale: bool = True,
                           tpi: bool = False, scale_tpi: int = None) -> xr.Dataset:
     """Loads topographic data and resamples it to match the dynamic data loaded for training.
 
@@ -129,10 +152,13 @@ def load_static_topo_data(topo_data_path: pathlib.Path, data_dynamic: xr.Dataset
     dem["y"] = dem["y"] / 1000
     dem = dem.interp(coords={"x": data_dynamic.x.values, "y": data_dynamic.y.values})
 
+    if rescale:
+        dem = (dem - dem.min()) / (dem.max() - dem.min())
+
     return dem.to_dataset(name="feature")
 
 
-def get_tensor_info_with_patches(tensor_info, patch_size=None):
+def get_tensor_info_with_patches(tensor_info: dict, patch_size: int = None):
     """Modify the tensor info dictionary to include patch size, or not,
     in the training phase
 

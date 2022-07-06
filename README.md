@@ -1,4 +1,4 @@
-# Deep ARNowcasting
+# The Nowcasting Project
 
 This project proposes a flexible framework for the training of multi-horizon autoregressive deep learning (DL) models.
 
@@ -15,7 +15,7 @@ Create a conda environment using the provided `environment.yml` file:
 conda env create -f environment.yml
 ```
 
-The environment file does not include [PyTorch](https://pytorch.org/get-started/locally/), to accomodate for the version that your setup is compatible with. Almost all of the code runs with torch 1.9, but in order to use the Optical Flow component, you have to have the latest version.
+The environment file does not include [PyTorch](https://pytorch.org/get-started/locally/), to accomodate for the version that your setup is compatible with. Almost all of the code runs with PyTorch 1.9, except for the Optical Flow component, that requires the latest version.
 
 This project made use of 3 additonal packages that can be retrieved with the following commands:
 ```shell
@@ -41,15 +41,23 @@ export PYTHONPATH="${PYTHONPATH}:/home/haddad/nowproject/"
 Then apply the command ```source ~/.bashrc```.
 
 ## 2. Pipeline
+![pipeline outline](./figs/pipeline_outline.png)
 
-The pipeline's components can be found under `nowproject/`:
-  * `training.py`: contains the AutoregressiveTraining function.
-  * `predictions.py`: contains the AutoregressivePredictions function.
-  * `dataloader.py`: contains all the classes and functions related to the autoregressive dataset and dataloader used in this project.
-  * `loss.py`: contains the MSE, LogCosh and FSS losses implemented in this project.
-  * `scalers.py`: contains the different data scalers used in this project. `utils/scalers_modules` contains the scalers along with the parameters we employed.
-  * `architectures.py`: contains the different 3D architectures implemented in this project. The layers used to build those models can be found under `dl_models/`, in the files `layers_3d.py`, `layers_res_conv.py` and `layers_optical_flow.py`.
-  * `architectures_2d.py`: contains archived 2D architectures that were considered at an earlier stage in the project.
-  * `plot_precip.py` and `plot_map.py` under `utils/`: contain code to plot data on maps, and in our case precipitation.
-  * `plot_skills.py` under `utils/`: contain code to plot skills of benchmarks and models.
+The pipeline's components can be found under `nowproject/`.
 
+## 3. Training models
+
+`scripts/train.py` is the script used to train our models and that combines all the different elements of the pipeline. 
+
+To reproduce the best results, you would need to use the following settings :
+* **config**: `"configs/UNet3D/Residual-MaxPool2-Conv3-ELU.json"`
+* **train/validation sets**:
+  * *train*: 2018-01-01 -> 2018-12-31
+  * *validation*: 2020-01-01 -> 2020-12-31
+* **scaler**: Log Normalizer
+* **loss**: Weighted value-masked MSE with $b=5$ and $c=4$ or unweighted value-masked MSE
+
+
+## 3. Results
+
+![best models forecast 2017-08-31T17:00:00](./figs/best_models_2017-08-31T17:00:00.png)

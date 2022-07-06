@@ -6,9 +6,12 @@ Created on Tue Mar 15 07:50:15 2022
 @author: ghiggi
 """
 import os
+import pathlib
 import sys
 import json
+from typing import List
 import torch
+from torch import nn
 import pickle
 import shutil
 import inspect
@@ -29,7 +32,6 @@ from xforecasting.utils.torch import (
 ### Default settings ###
 ########################
 
-
 def get_default_model_settings():
     """Return some default settings for a NowProject model."""
     model_settings = {
@@ -37,21 +39,8 @@ def get_default_model_settings():
         "model_name_prefix": None,
         "model_name": None,
         "model_name_suffix": None,
-        # Architecture options
-        # - ConvBlock options
-        "conv_type": "regular",
-        "kernel_size_conv": 3,
-        "bias": True,
-        "batch_norm": False,
-        "batch_norm_before_activation": False,
-        "activation": True,
-        "activation_fun": "relu",
+        # Architecture options,
         "last_layer_activation": False,
-        # - Pooling options
-        "pool_method": "Max",
-        "kernel_size_pooling": 4,  # half the resolution
-        # - Padding options
-        "padding": "True",
     }
     return model_settings
 
@@ -62,9 +51,9 @@ def get_default_training_settings():
         "epochs": 15,
         "ar_training_strategy": "RNN",
         "learning_rate": 0.001,
-        "training_batch_size": 16,
-        "validation_batch_size": 16,
-        "scoring_interval": 20,
+        "training_batch_size": 8,
+        "validation_batch_size": 8,
+        "scoring_interval": 30,
         "save_model_each_epoch": False,
         "numeric_precision": "float32",
         "deterministic_training": False,
@@ -81,7 +70,7 @@ def get_default_training_settings():
 def get_default_ar_settings():
     """Return some default settings for the autoregressive model."""
     ar_settings = {
-        "input_k": [-5, -4, -3, -2, -1],
+        "input_k": [-4, -3, -2, -1],
         "output_k": [0],
         "forecast_cycle": 1,
         "ar_iterations": 6,
@@ -139,14 +128,14 @@ def get_default_settings():
 ########################
 ### I/O config file ####
 ########################
-def read_config_file(fpath):
+def read_config_file(fpath: str):
     """Create a dictionary of settings based on the json config file."""
     with open(fpath) as input_file:
         cfg = json.load(input_file)
     return cfg
 
 
-def write_config_file(cfg, fpath):
+def write_config_file(cfg: dict, fpath: str):
     """Write a json config file from the python dictionary config file."""
     with open(fpath, "w") as output_file:
         json.dump(cfg, output_file, indent=4)
@@ -156,7 +145,7 @@ def write_config_file(cfg, fpath):
 #############################
 ### Check config file keys ##
 #############################
-def get_model_settings(cfg):
+def get_model_settings(cfg: dict):
     """Return model settings from the config file."""
     # Initialize model settings
     model_settings = cfg["model_settings"]
@@ -198,7 +187,7 @@ def get_model_settings(cfg):
     return model_settings
 
 
-def get_training_settings(cfg):
+def get_training_settings(cfg: dict):
     """Return training settings from the config file."""
     # Initialize training settings
     training_settings = {}
@@ -234,7 +223,7 @@ def get_training_settings(cfg):
     return training_settings
 
 
-def get_dataloader_settings(cfg):
+def get_dataloader_settings(cfg: dict):
     """Return dataloader settings from the config file."""
     # Initialize dataloader settings
     dataloader_settings = {}
@@ -261,7 +250,7 @@ def get_dataloader_settings(cfg):
     return dataloader_settings
 
 
-def get_ar_settings(cfg):
+def get_ar_settings(cfg: dict):
     """Return AR settings from the config file."""
     # Initialize AR settings
     ar_settings = {}
@@ -290,7 +279,7 @@ def get_ar_settings(cfg):
     return ar_settings
 
 
-def get_SWAG_settings(cfg):
+def get_SWAG_settings(cfg: dict):
     """Return SWAG settings from the config file."""
     # Initialize AR settings
     SWAG_settings = {}
@@ -326,7 +315,7 @@ def check_same_dict(x, y):
 #################################
 ### Checks config key values ####
 #################################
-def check_numeric_precision(numeric_precision):
+def check_numeric_precision(numeric_precision: str):
     """Check numeric precision argument."""
     if not isinstance(numeric_precision, str):
         raise TypeError("Specify 'numeric_precision' as a string")
@@ -340,11 +329,11 @@ def check_numeric_precision(numeric_precision):
 ########################
 ### Model definition ###
 ########################
-def get_pytorch_model(module, model_settings):
+def get_pytorch_model(module: nn.Module, model_settings: dict):
     """
     Define a NowProject model based on model_settings configs.
 
-    The architecture structure must be define in the 'module' custom python file
+    The architecture structure must be defined in the 'architectures' custom python file
 
     Parameters
     ----------
@@ -366,7 +355,7 @@ def get_pytorch_model(module, model_settings):
     return model
 
 
-def get_pytorch_SWAG_model(module, model_settings, swag_settings):
+def get_pytorch_SWAG_model(module: nn.Module, model_settings: dict, swag_settings):
     """
     Define a NowProject SWAG model based on model_settings and swag configs.
 
@@ -378,6 +367,8 @@ def get_pytorch_SWAG_model(module, model_settings, swag_settings):
         Imported python module containing the architecture definition.
     model_settings : dict
         Dictionary containing all architecture options.
+    swag_settings : dict
+        Dictionary containing all the SWAG options.
     """
     from modules.swag import SWAG
 
@@ -400,14 +391,14 @@ def get_pytorch_SWAG_model(module, model_settings, swag_settings):
 
 
 ##----------------------------------------------------------------------------.
-def load_pretrained_model(model, model_dir, strict=True):
+def load_pretrained_model(model: nn.Module, model_dir: str, strict: bool = True):
     """Load a pre-trained pytorch model using HDF5 saved weights."""
     model_fpath = os.path.join(model_dir, "model_weights", "model.h5")
     state = torch.load(model_fpath)
     model.load_state_dict(state, strict=strict)
 
 
-def load_pretrained_ar_scheduler(exp_dir, model_name):
+def load_pretrained_ar_scheduler(exp_dir: str, model_name: str):
     """Load a pre-trained AR scheduler."""
     training_info_fpath = os.path.join(
         exp_dir, model_name, "training_info", "ar_TrainingInfo.pickle"
@@ -423,7 +414,7 @@ def load_pretrained_ar_scheduler(exp_dir, model_name):
 #########################
 ### Pytorch settings ####
 #########################
-def set_pytorch_settings(training_settings):
+def set_pytorch_settings(training_settings: dict):
     """Set training options with pytorch."""
     # Retrieve pytorch settings options
     deterministic_training = training_settings["deterministic_training"]
@@ -471,7 +462,7 @@ def set_pytorch_settings(training_settings):
 ############################
 ### Experiment structure ###
 ############################
-def get_model_name(cfg):
+def get_model_name(cfg: dict):
     """Create a model name based on the config settings."""
     ##------------------------------------------------------------------------.
     # Retrieve model_name, suffix and prefix
@@ -513,7 +504,8 @@ def get_model_name(cfg):
     return model_name
 
 
-def create_experiment_directories(exp_dir, model_name, suffix="", force=False):
+def create_experiment_directories(exp_dir: pathlib.Path, model_name: str, suffix: str = "", 
+                                  force: bool = False):
     """Create the required directory for a specific NowProject model."""
     # Check if the experiment directory already exists
     dir_name = f"{model_name}-{suffix}" if suffix != "" else model_name
@@ -561,7 +553,7 @@ def create_experiment_directories(exp_dir, model_name, suffix="", force=False):
 #########################
 ### Print model info ####
 #########################
-def pretty_printing(d, indent=0, indent_factor=2):
+def pretty_printing(d: dict, indent: int = 0, indent_factor: int = 2):
     """Pretty pritting of nested dictionaries."""
     for key, value in d.items():
         print((" " * indent * indent_factor) + "- " + str(key) + ":", end="")
@@ -572,23 +564,13 @@ def pretty_printing(d, indent=0, indent_factor=2):
             print(" " + str(value), end="\n")
 
 
-# def pretty_printing(d, indent=0):
-#     """Pretty pritting of nested dictionaries."""
-#     for key, value in d.items():
-#         print('\t' * indent + str(key))
-#         if isinstance(value, dict):
-#             pretty_printing(value, indent+1)
-#         else:
-#             print('\t' * (indent+1) + str(value))
-
-
-def print_tensor_info(tensor_info):
+def print_tensor_info(tensor_info: dict):
     """Pretty printing of tensor dimension information."""
     print("- Input-Output Tensors characteristics:")
     pretty_printing(tensor_info, indent=1, indent_factor=2)
 
 
-def print_model_description(cfg, dim_info=None):
+def print_model_description(cfg: dict, dim_info: dict = None):
     """Pretty printing of experiment settings."""
     print("- Experiment settings:")
     if dim_info is not None:
@@ -600,27 +582,92 @@ def print_model_description(cfg, dim_info=None):
 ### Test events ####
 ####################
 
-def create_event_time_range(event_dict, freq="2min30s"):
+def create_event_time_range(event_dict: dict, freq: str = "2min30s") -> np.ndarray:
+    """Creates a time range from the information contained in the event_dict.
+
+    Parameters
+    ----------
+    event_dict : dict
+        Dictionary with keys "start_time", "duration" and "timezone"
+    freq : str, optional
+        Timestep interval, by default "2min30s"
+
+    Returns
+    -------
+    np.ndarray
+        Time range starting at the indicated time in event_dict for the given
+        duration and timestep.
+    """
     start_time = pd.to_datetime(event_dict["start_time"])
-    # start_time = tz.timezone(event_dict["timezone"]).localize(pd.to_datetime(event_dict["start_time"]))\
-    #                .astimezone(tz.timezone(target_timezone))
     return pd.date_range(start=start_time, 
                          end=start_time + datetime.timedelta(hours=event_dict["duration"]), 
                          freq=freq, tz=event_dict["timezone"]).to_numpy().astype("M8[s]")
 
-def create_event_time_range_autoregressive(event_dict, nb_ar, freq="2min30s"):
+def create_event_time_range_autoregressive(event_dict: dict, nb_ar_iterations: int, 
+                                           freq: str = "2min30s") -> np.ndarray:
+    """Creates an autoregressive time range with nb_ar_iterations additional timesteps
+    preceding the indicated start time.
+
+    Parameters
+    ----------
+    event_dict : dict
+        Dictionary with keys "start_time", "duration" and "timezone"
+    nb_ar_iterations : int
+        Number of Autoregressive Iterations
+    freq : str, optional
+        Timestep interval, by default "2min30s"
+
+    Returns
+    -------
+    np.ndarray
+        Autoregressive time range starting with nb_ar_iterations additional timesteps
+        preceding the indicated start time, for the given duration and timestep.
+    """
     regular_time_range = create_event_time_range(event_dict, freq=freq)
-    additional_time_range = pd.date_range(end=regular_time_range[0], periods=nb_ar + 1, 
+    additional_time_range = pd.date_range(end=regular_time_range[0], periods=nb_ar_iterations + 1, 
                                           freq=freq, tz=event_dict["timezone"], 
                                           closed="left").to_numpy().astype("M8[s]")
     return np.concatenate([additional_time_range, regular_time_range])
 
-def create_test_events_autoregressive_time_range(fpath, nb_ar, freq="2min30s"):
+def create_test_events_autoregressive_time_range(fpath: str, nb_ar_iterations: int, 
+                                                freq: str = "2min30s") -> List[np.ndarray]:
+    """Creates test events autoregressive time ranges with nb_ar_iterations additional timesteps
+    preceding the indicated start time.
+
+    Parameters
+    ----------
+    fpath : str
+        Path to the JSON file containing the event dictionaries
+    nb_ar_iterations : int
+        Number of Autoregressive Iterations
+    freq : str, optional
+        Timestep interval, by default "2min30s"
+
+    Returns
+    -------
+    List[np.ndarray]
+        List of autoregressive time ranges
+    """
     with open(fpath, "r", encoding="utf-8") as f:
         event_dicts = json.load(f)
-        return [create_event_time_range_autoregressive(d, nb_ar, freq=freq) for d in event_dicts]
+        return [create_event_time_range_autoregressive(d, nb_ar_iterations, freq=freq) for d in event_dicts]
 
-def create_test_events_time_range(fpath, freq="2min30s"):
+def create_test_events_time_range(fpath: str, freq: str = "2min30s") -> List[np.ndarray]:
+    """Creates test events time ranges starting at start_time for a given duration
+    and timestep.
+
+    Parameters
+    ----------
+    fpath : str
+        Path to the JSON file containing the event dictionaries
+    freq : str, optional
+        Timestep interval, by default "2min30s"
+
+    Returns
+    -------
+    List[np.ndarray]
+        List of time ranges
+    """
     with open(fpath, "r", encoding="utf-8") as f:
         event_dicts = json.load(f)
         return [create_event_time_range(d, freq=freq) for d in event_dicts]

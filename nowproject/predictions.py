@@ -1,11 +1,13 @@
 import os
 import shutil
 import time
+from typing import Callable, List, Union
 import torch
 import zarr
 import dask
 import numpy as np
 import xarray as xr
+from nowproject.scalers import Scaler
 
 from xforecasting.dataloader_autoregressive import (
     remove_unused_Y,
@@ -46,38 +48,38 @@ from xforecasting.predictions_autoregressive import (
 def AutoregressivePredictions(
     model,
     # Data
-    data_dynamic,
-    data_static=None,
-    data_bc=None,
-    bc_generator=None,
+    data_dynamic: Union[xr.DataArray, xr.Dataset],
+    data_static: Union[xr.DataArray, xr.Dataset] = None,
+    data_bc: Union[xr.DataArray, xr.Dataset] = None,
+    bc_generator: Callable = None,
     # AR_batching_function
-    ar_batch_fun=get_aligned_ar_batch,
+    ar_batch_fun: Callable = get_aligned_ar_batch,
     # Scaler options
-    scaler_transform=None,
-    scaler_inverse=None,
+    scaler_transform: Scaler = None,
+    scaler_inverse: Scaler = None,
     # Dataloader options
-    batch_size=64,
-    num_workers=0,
-    prefetch_factor=2,
-    prefetch_in_gpu=False,
-    pin_memory=False,
-    asyncronous_gpu_transfer=True,
-    device="cpu",
+    batch_size: int = 64,
+    num_workers: int = 0,
+    prefetch_factor: int = 2,
+    prefetch_in_gpu: bool = False,
+    pin_memory: bool = False,
+    asyncronous_gpu_transfer: bool = True,
+    device: str = "cpu",
     # Autoregressive settings
-    input_k=[-3, -2, -1],
-    output_k=[0],
-    forecast_cycle=1,
-    ar_iterations=50,
-    stack_most_recent_prediction=True,
+    input_k: List[int] = [-3, -2, -1],
+    output_k: List[int] = [0],
+    forecast_cycle: int = 1,
+    ar_iterations: int = 50,
+    stack_most_recent_prediction: bool = True,
     # Prediction options
-    forecast_reference_times=None,
-    keep_first_prediction=True,
-    ar_blocks=None,
+    forecast_reference_times: np.ndarray = None,
+    keep_first_prediction: bool = True,
+    ar_blocks: int = None,
     # Save options
-    zarr_fpath=None,
-    rounding=None,
-    compressor="auto",
-    chunks="auto",
+    zarr_fpath: str = None,
+    rounding: int = None,
+    compressor: Union[str, dict] = "auto",
+    chunks: Union[str, dict] = "auto",
 ):
     """Wrapper to generate weather forecasts following CDS Common Data Model (CDM).
 

@@ -1,3 +1,4 @@
+from typing import List, Tuple
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -15,7 +16,7 @@ import numpy as np
 ### Custom loss utils ####
 ##########################
 def reshape_tensors_4_loss(Y_pred, Y_obs, dim_info_dynamic, channels_first=False):
-    """Reshape tensors for loss computation as currently expexted by WeightedMSELoss ."""
+    """Reshape tensors for loss computation"""
     # Retrieve tensor dimension names
     ordered_dynamic_variables_ = [
         k for k, v in sorted(dim_info_dynamic.items(), key=lambda item: item[1])
@@ -49,8 +50,30 @@ def reshape_tensors_4_loss(Y_pred, Y_obs, dim_info_dynamic, channels_first=False
 ### Loss definitions ###
 ########################
 class WeightedMSELoss(nn.MSELoss):
-    def __init__(self, reduction="mean", pixel_weights=None, weighted_truth=False, weights_params=None, 
-                 zero_value=0):
+    def __init__(self, reduction: str = "mean", pixel_weights: torch.Tensor = None, 
+                 weighted_truth: bool = False, weights_params: Tuple[int, ...] = None, 
+                 zero_value: int = 0):
+        """Initialize the WeightedMSE loss.
+
+        Parameters
+        ----------
+        reduction : str, optional
+            Reduction of the squared errors, options: "mean", "sum", 
+            "mean_masked", "none", by default "mean"
+        pixel_weights : torch.Tensor, optional
+            Spatial weights to be applied on the squared errors, by default None
+        weighted_truth : bool, optional
+            Whether to apply weights on the observed values, by default False
+        weights_params : Tuple[int, ...], optional
+            Parameters of the weighting function applied to the observed values, by default None
+        zero_value : int, optional
+            Minimum possible value to be masked, by default 0
+
+        Raises
+        ------
+        ValueError
+            Value of the reduction parameter should be one of "mean", "mean_masked", "sum" or "none"
+        """
         super(WeightedMSELoss, self).__init__(reduction="none")
         if not isinstance(reduction, str) or reduction not in ("mean", "mean_masked", "sum", "none"):
             raise ValueError("{} is not a valid value for reduction".format(reduction))
@@ -110,7 +133,21 @@ class WeightedMSELoss(nn.MSELoss):
 
 # ------------------------------------------------------------------------------.
 class LogCoshLoss(torch.nn.Module):
-    def __init__(self, masked=False, weighted_truth=False, weights_params=None, zero_value=0):
+    def __init__(self, masked: bool = False, weighted_truth: bool = False, 
+                 weights_params: Tuple[int, ...] = None, zero_value: int = 0):
+        """Initialize the LogCosh loss.
+
+        Parameters
+        ----------
+        masked : bool, optional
+            Whether to apply masking to the zero_value, by default False
+        weighted_truth : bool, optional
+            Whether to apply weights on the observed values, by default False
+        weights_params : Tuple[int, ...], optional
+            Parameters of the weighting function applied to the observed values, by default None
+        zero_value : int, optional
+            Minimum possible value to be masked, by default 0
+        """
         super().__init__()
         self.masked = masked
         self.weighted_truth = weighted_truth
@@ -138,7 +175,16 @@ class LogCoshLoss(torch.nn.Module):
 
 # ------------------------------------------------------------------------------.
 class FSSLoss(nn.Module):
-    def __init__(self, mask_size, cutoff=0.5):
+    def __init__(self, mask_size: int, cutoff: float = 0.5):
+        """Initialize the FSS loss.
+
+        Parameters
+        ----------
+        mask_size : int
+            The size of the neighborhood.
+        cutoff : float, optional
+            Threshold at which to apply soft discretization, by default 0.5
+        """
         super(FSSLoss, self).__init__()
         self.mask_size = mask_size
         self.cutoff = cutoff
@@ -176,7 +222,16 @@ class FSSLoss(nn.Module):
 
 
 class CombinedFSSLoss(nn.Module):
-    def __init__(self, mask_size, cutoffs):
+    def __init__(self, mask_size: int, cutoffs: List[float]):
+        """Initialize the CombinedFSS loss.
+
+        Parameters
+        ----------
+        mask_size : int
+            Size of the neighborhood
+        cutoffs : List[float]
+            List of thresholds for each FSS loss to combine.
+        """
         super(CombinedFSSLoss, self).__init__()
         self.mask_size = mask_size
         self.losses = [FSSLoss(mask_size, cutoff) for cutoff in cutoffs]
