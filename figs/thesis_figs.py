@@ -144,7 +144,8 @@ timesteps = [
     "2017-01-12 17:00:00",
     "2017-01-31 16:00:00",
     "2017-06-14 16:00:00",
-    "2017-07-07 16:00:00",
+    # "2017-07-07 16:00:00",
+    "2017-07-07 18:00:00",
     "2017-08-31 17:00:00"
 ]
 
@@ -374,9 +375,10 @@ models = [
     "RNN-AR6-resConv64-IncrementLearning-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
     "RNN-AR6-ResidualUNet3D-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
     "RNN-AR6-ResidualUNet3D-ELU-IncrementLearning-NoAct-ReZero-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year",
+    "RNN-AR6-MultiScaleResidualConv-IncrementLearning-5mins-Patches-LogNormalizeScaler-MSEMasked-15epochs-1year"
 ]
 cont, cat, spatial, forecasts = load_models_skills_and_forecasts(models, models_dir)
-legend_labels = ["resConv64", "UNet3D-ReLU", "UNet3D-ELU"]
+legend_labels = ["resConv64", "UNet3D-ReLU", "UNet3D-ELU", "MultiScaleResConv-ELU"]
 
 plot_forecasts_and_skills(forecasts, data_dynamic_ch, legend_labels, 
                           results_figs_dir / "comparison_forecasts", 
