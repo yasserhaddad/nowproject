@@ -137,6 +137,49 @@ class ResNetBlock(nn.Module):
 
         return out
 
+
+class ResNetBlockDoubleConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, order=("conv", "relu"), num_groups=8, rezero=True, **kwargs):
+        super().__init__()
+        if type(order) != list:
+            order = list(order)
+        # first convolution
+        self.conv1 = SingleConv(in_channels, out_channels, kernel_size=kernel_size, order=order, num_groups=num_groups)
+        # remove non-linearity from the 3rd convolution since it's going to be applied after adding the residual
+        n_order = order
+        for c in ["relu", "elu", "leakyrelu"]:
+            if c in n_order:
+                n_order.remove(c)
+        self.conv3 = SingleConv(out_channels, out_channels, kernel_size=kernel_size, order=n_order, num_groups=num_groups)
+
+        if in_channels == out_channels:
+            self.res_connection = nn.Identity()
+        else:
+            self.res_connection = nn.Linear(in_channels, out_channels)
+
+        ### Define multiplier initialized at 0 for ReZero trick
+        self.rezero = rezero
+        if self.rezero:
+            self.rezero_weight = torch.nn.Parameter(torch.zeros(1), requires_grad=True)
+
+    def forward(self, x):
+        # apply first convolution and save the output as a residual
+        out = self.conv1(x)
+
+        # residual block
+        out = self.conv3(out)
+
+        if self.rezero:
+            out *= self.rezero_weight
+        # Add residual connection
+        out += torch.permute(
+                    self.res_connection(torch.permute(x, (0, 2, 3, 4, 1))), 
+                    (0, 4, 1, 2, 3)
+                )
+
+        return out
+
+
 class ExtResNetBlock(nn.Module):
     """
     Basic UNet block consisting of a SingleConv followed by the residual block.

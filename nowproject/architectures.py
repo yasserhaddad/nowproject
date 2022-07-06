@@ -19,9 +19,7 @@ from nowproject.dl_models.layers_res_conv import (
     UpsamplingResConv
 )
 
-from nowproject.dl_models.layers_optical_flow import (
-    RAFTOpticalFlow
-)
+# from nowproject.dl_models.layers_optical_flow import RAFTOpticalFlow
 
 from nowproject.utils.utils_models import (
     check_skip_connection,
@@ -33,6 +31,7 @@ from nowproject.dl_models.layers_3d import (
     DecoderMultiScale, 
     DoubleConv, 
     ExtResNetBlock, 
+    ResNetBlockDoubleConv,
     NoDownsampling, 
     ResNetBlock, 
     create_encoders_multiscale
@@ -88,7 +87,7 @@ class ResidualUNet3D(Base3DUNet):
 
 
 class MultiScaleResidualConv(nn.Module):
-    def __init__(self, tensor_info, f_maps=64, layer_order=("conv", "relu"), basic_module=ExtResNetBlock,
+    def __init__(self, tensor_info, f_maps=64, layer_order=("conv", "relu"), basic_module=ResNetBlockDoubleConv,
                  num_groups=8, num_levels=3, conv_padding=1, pooling_depth=2, pool_kernel_size=(1, 2, 2), 
                  conv_kernel_size=3, upsample_scale_factor=(1, 2, 2), final_conv_kernel=(4, 1, 1), 
                  increment_learning=True, pool_type="max"):
